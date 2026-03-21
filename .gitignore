@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Uploads / local storage
+uploads/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
