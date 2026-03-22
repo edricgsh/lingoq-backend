@@ -38,7 +38,7 @@ export class LambdaService implements OnModuleInit {
     const payload = JSON.stringify({ youtube_url: youtubeUrl, video_id: videoId });
 
     const command = new InvokeCommand({
-      FunctionName: 'learn-spanish-subtitle-extractor',
+      FunctionName: 'lingoq-subtitle-extractor',
       Payload: Buffer.from(payload),
     });
 
