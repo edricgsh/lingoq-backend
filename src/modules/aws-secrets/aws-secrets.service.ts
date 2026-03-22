@@ -15,6 +15,7 @@ export class SecretData {
   COGNITO_USERPOOLID?: string;
   COGNITO_REGION?: string;
   ANTHROPIC_API_KEY?: string;
+  SUPADATA_API_KEY?: string;
   SUPABASE_URL?: string;
   SUPABASE_API_KEY?: string;
   LEARN_SPANISH_BE_API_KEY?: string;

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { LoggerService } from 'src/modules/logger/logger.service';
 import { SubtitleResponse } from './lambda.service';
 
@@ -22,24 +22,23 @@ const POLL_TIMEOUT_MS = 120_000;
 
 @Injectable()
 export class SupadataService {
-  private readonly apiKey: string;
-
   constructor(
-    private readonly configService: ConfigService,
+    private readonly secretsService: AwsSecretsService,
     private readonly logger: LoggerService,
-  ) {
-    this.apiKey = this.configService.get<string>('SUPADATA_API_KEY') ?? '';
-  }
+  ) {}
 
   async extractSubtitles(youtubeUrl: string, videoId: string, lang?: string): Promise<SubtitleResponse> {
     this.logger.log(`Supadata: requesting transcript for videoId=${videoId} url=${youtubeUrl} lang=${lang ?? 'default'}`);
+
+    const secrets = await this.secretsService.getSecret();
+    const apiKey = secrets.SUPADATA_API_KEY ?? '';
 
     const url = new URL(`${SUPADATA_API_BASE}/transcript`);
     url.searchParams.set('url', youtubeUrl);
     if (lang) url.searchParams.set('lang', lang);
 
     const response = await fetch(url.toString(), {
-      headers: { 'x-api-key': this.apiKey },
+      headers: { 'x-api-key': apiKey },
     });
 
     this.logger.log(`Supadata: response status=${response.status} videoId=${videoId}`);
@@ -64,13 +63,15 @@ export class SupadataService {
   private async pollJob(jobId: string, videoId: string): Promise<SubtitleResponse> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     let attempt = 0;
+    const secrets = await this.secretsService.getSecret();
+    const apiKey = secrets.SUPADATA_API_KEY ?? '';
 
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       attempt++;
 
       const response = await fetch(`${SUPADATA_API_BASE}/transcript/${jobId}`, {
-        headers: { 'x-api-key': this.apiKey },
+        headers: { 'x-api-key': apiKey },
       });
 
       if (!response.ok) {
