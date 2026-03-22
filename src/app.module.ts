@@ -24,7 +24,7 @@ import { TtsModule } from 'src/modules/tts/tts.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: process.env.NODE_ENV ? `.env.${process.env.NODE_ENV}` : '.env',
+      envFilePath: process.env.NODE_ENV ? [`.env.${process.env.NODE_ENV}`, '.env'] : '.env',
     }),
     LoggerModule,
     AwsSecretsModule,
