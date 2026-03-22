@@ -23,8 +23,8 @@ import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: true,
+  sameSite: 'none' as const,
   path: '/',
 };
 
