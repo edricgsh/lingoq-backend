@@ -20,9 +20,19 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  const corsOrigin = process.env.CORS_ORIGIN ?? '';
+  const origins: (string | RegExp)[] = [
+    'http://localhost:5005',
+    /^https:\/\/.*\.lingoq\.study$/,
+    ...corsOrigin.split(',').map((o) => o.trim()).filter(Boolean),
+  ];
+
   app.enableCors({
-    origin: ['http://localhost:5005'],
+    origin: origins,
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+    exposedHeaders: ['set-cookie'],
   });
 
   app.useGlobalPipes(
