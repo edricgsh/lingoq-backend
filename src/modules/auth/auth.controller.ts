@@ -94,9 +94,11 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const accessToken = req.cookies?.accessToken;
     await this.authService.logout(accessToken);
-    const { domain } = getCookieOptions(this.isLocal) as any;
-    res.clearCookie('accessToken', { path: '/', ...(domain ? { domain } : {}) });
-    res.clearCookie('refreshToken', { path: '/', ...(domain ? { domain } : {}) });
+    const opts = getCookieOptions(this.isLocal);
+    const clearOpts: any = { path: opts.path, httpOnly: opts.httpOnly, secure: opts.secure, sameSite: opts.sameSite };
+    if ('domain' in opts) clearOpts.domain = (opts as any).domain;
+    res.clearCookie('accessToken', clearOpts);
+    res.clearCookie('refreshToken', clearOpts);
     return { message: 'Logged out successfully' };
   }
 
