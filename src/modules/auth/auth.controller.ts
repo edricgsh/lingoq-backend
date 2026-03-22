@@ -99,7 +99,7 @@ export class AuthController {
     @Body() body: SyncUserDto,
   ) {
     const secrets = await this.secretsService.getSecret();
-    if (apiKey !== secrets.LEARN_SPANISH_BE_API_KEY) {
+    if (apiKey !== secrets.LINGOQ_BE_API_KEY) {
       throw new UnauthorizedException('Invalid API key');
     }
     return this.authService.syncUser(body);

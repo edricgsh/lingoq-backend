@@ -18,7 +18,7 @@ export class SecretData {
   SUPADATA_API_KEY?: string;
   SUPABASE_URL?: string;
   SUPABASE_API_KEY?: string;
-  LEARN_SPANISH_BE_API_KEY?: string;
+  LINGOQ_BE_API_KEY?: string;
 }
 
 @Injectable()
