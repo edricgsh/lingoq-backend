@@ -115,27 +115,55 @@ export class SessionsWorker implements OnModuleInit {
         );
       }
 
-      // Update title and VTT subtitles from Lambda response
+      // Resolve title: prefer extractor result, fall back to YouTube oEmbed (free, no API key)
+      let resolvedTitle = lambdaResult.title;
+      if (!resolvedTitle) {
+        try {
+          const oembedRes = await fetch(
+            `https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeUrl)}&format=json`,
+          );
+          if (oembedRes.ok) {
+            const oembed = (await oembedRes.json()) as { title?: string };
+            resolvedTitle = oembed.title;
+            this.logger.log(`Resolved title via oEmbed for session ${sessionId}: "${resolvedTitle}"`);
+          }
+        } catch (err) {
+          this.logger.warn(`oEmbed title fetch failed for session ${sessionId}: ${err.message}`);
+        }
+      }
+
+      // Update title and VTT subtitles
       await this.sessionRepository.update(sessionId, {
-        title: lambdaResult.title,
+        title: resolvedTitle,
         subtitlesVtt: lambdaResult.subtitlesVtt ?? null,
       });
 
       // Step 2: Fetch and upload thumbnail to Supabase
+      // maxresdefault may not exist for all videos — fall back to hqdefault
       this.logger.log(`Processing session ${sessionId}: Uploading thumbnail...`);
       let thumbnailUrl: string | null = null;
       try {
-        const thumbnailResponse = await fetch(
+        const thumbnailCandidates = [
           `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
-        );
-        const thumbnailBuffer = Buffer.from(await thumbnailResponse.arrayBuffer());
-        thumbnailUrl = await this.supabaseService.uploadThumbnail(
-          youtubeVideoId,
-          thumbnailBuffer,
-          'image/jpeg',
-        );
-        if (thumbnailUrl) {
-          await this.sessionRepository.update(sessionId, { thumbnailUrl });
+          `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+        ];
+        let thumbnailBuffer: Buffer | null = null;
+        for (const candidateUrl of thumbnailCandidates) {
+          const res = await fetch(candidateUrl);
+          if (res.ok) {
+            thumbnailBuffer = Buffer.from(await res.arrayBuffer());
+            break;
+          }
+        }
+        if (thumbnailBuffer) {
+          thumbnailUrl = await this.supabaseService.uploadThumbnail(
+            youtubeVideoId,
+            thumbnailBuffer,
+            'image/jpeg',
+          );
+          if (thumbnailUrl) {
+            await this.sessionRepository.update(sessionId, { thumbnailUrl });
+          }
         }
       } catch (err) {
         this.logger.warn(`Failed to upload thumbnail for session ${sessionId}: ${err.message}`);
