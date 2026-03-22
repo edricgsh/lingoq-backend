@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
@@ -19,13 +19,19 @@ import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
       inject: [AwsSecretsService],
       useFactory: async (secretsService: AwsSecretsService) => {
         const secrets = await secretsService.getSecret();
+        const logger = new Logger('DatabaseModule');
+        const host = secrets.DB_HOST || 'localhost';
+        const port = parseInt(secrets.DB_PORT || '5433');
+        const database = secrets.DB_NAME || 'learn_spanish';
+        const username = secrets.DB_USERNAME || 'postgres';
+        logger.log(`Connecting to postgres://${username}@${host}:${port}/${database} (schema: lingoq)`);
         return {
           type: 'postgres',
-          host: secrets.DB_HOST || 'localhost',
-          port: parseInt(secrets.DB_PORT || '5432'),
-          username: secrets.DB_USERNAME || 'postgres',
+          host,
+          port,
+          username,
           password: secrets.DB_PASSWORD || 'postgres',
-          database: secrets.DB_NAME || 'learn_spanish',
+          database,
           schema: 'lingoq',
           extra: {
             options: `-c search_path=lingoq`,

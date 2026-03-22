@@ -21,21 +21,35 @@ import {
 } from './auth.service';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'lax' as const,
-  domain: '.lingoq.study',
-  path: '/',
-};
+function getCookieOptions(isLocal: boolean) {
+  if (isLocal) {
+    return {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax' as const,
+      path: '/',
+    };
+  }
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax' as const,
+    domain: '.lingoq.study',
+    path: '/',
+  };
+}
 
 @Controller('auth')
 export class AuthController {
+  private readonly isLocal: boolean;
+
   constructor(
     private readonly authService: AuthService,
     private readonly secretsService: AwsSecretsService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.isLocal = this.configService.get<string>('NODE_ENV') === 'local';
+  }
 
   @Post('signup')
   async signUp(@Body() body: SignUpDto) {
@@ -45,12 +59,13 @@ export class AuthController {
   @Post('signin')
   async signIn(@Body() body: SignInDto, @Res({ passthrough: true }) res: Response) {
     const tokens = await this.authService.signIn(body);
+    const cookieOptions = getCookieOptions(this.isLocal);
     res.cookie('accessToken', tokens.accessToken, {
-      ...COOKIE_OPTIONS,
+      ...cookieOptions,
       maxAge: tokens.expiresIn * 1000,
     });
     res.cookie('refreshToken', tokens.refreshToken, {
-      ...COOKIE_OPTIONS,
+      ...cookieOptions,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
     return { message: 'Signed in successfully' };
@@ -69,7 +84,7 @@ export class AuthController {
     }
     const tokens = await this.authService.refreshToken({ refreshToken });
     res.cookie('accessToken', tokens.accessToken, {
-      ...COOKIE_OPTIONS,
+      ...getCookieOptions(this.isLocal),
       maxAge: tokens.expiresIn * 1000,
     });
     return { message: 'Token refreshed' };
@@ -79,8 +94,9 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const accessToken = req.cookies?.accessToken;
     await this.authService.logout(accessToken);
-    res.clearCookie('accessToken', { path: '/', domain: '.lingoq.study' });
-    res.clearCookie('refreshToken', { path: '/', domain: '.lingoq.study' });
+    const { domain } = getCookieOptions(this.isLocal) as any;
+    res.clearCookie('accessToken', { path: '/', ...(domain ? { domain } : {}) });
+    res.clearCookie('refreshToken', { path: '/', ...(domain ? { domain } : {}) });
     return { message: 'Logged out successfully' };
   }
 
