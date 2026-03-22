@@ -24,7 +24,8 @@ import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
-  sameSite: 'none' as const,
+  sameSite: 'lax' as const,
+  domain: '.lingoq.study',
   path: '/',
 };
 
@@ -78,8 +79,8 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const accessToken = req.cookies?.accessToken;
     await this.authService.logout(accessToken);
-    res.clearCookie('accessToken', { path: '/' });
-    res.clearCookie('refreshToken', { path: '/' });
+    res.clearCookie('accessToken', { path: '/', domain: '.lingoq.study' });
+    res.clearCookie('refreshToken', { path: '/', domain: '.lingoq.study' });
     return { message: 'Logged out successfully' };
   }
 
