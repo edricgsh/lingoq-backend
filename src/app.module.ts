@@ -19,6 +19,7 @@ import { VocabModule } from 'src/modules/vocab/vocab.module';
 import { HomeworkModule } from 'src/modules/homework/homework.module';
 import { HealthModule } from 'src/modules/health/health.module';
 import { TtsModule } from 'src/modules/tts/tts.module';
+import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { TtsModule } from 'src/modules/tts/tts.module';
     HomeworkModule,
     HealthModule,
     TtsModule,
+    FlashcardsModule,
   ],
   providers: [
     {

@@ -11,6 +11,9 @@ import { Homework } from 'src/entities/homework.entity';
 import { HomeworkQuestion } from 'src/entities/homework-question.entity';
 import { HomeworkSubmission } from 'src/entities/homework-submission.entity';
 import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
+import { AllowedEmail } from 'src/entities/allowed-email.entity';
+import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
+import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
 
 @Module({
   imports: [
@@ -46,6 +49,9 @@ import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
             HomeworkQuestion,
             HomeworkSubmission,
             HomeworkAnswer,
+            AllowedEmail,
+            FlashcardProgress,
+            FlashcardSettings,
           ],
           synchronize: true, // Use only in development; use migrations in prod
           logging: false,
