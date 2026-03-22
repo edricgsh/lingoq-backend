@@ -23,7 +23,8 @@ async function bootstrap() {
   const corsOrigin = process.env.CORS_ORIGIN ?? '';
   const origins: (string | RegExp)[] = [
     'http://localhost:5005',
-    /^https:\/\/.*\.lingoq\.study$/,
+    /lingoq\.study/,
+    /lingoq.*vercel/,
     ...corsOrigin.split(',').map((o) => o.trim()).filter(Boolean),
   ];
 
