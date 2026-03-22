@@ -4,16 +4,6 @@ import { AuthGuard } from '@nestjs/passport';
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
   canActivate(context: ExecutionContext) {
-    if (process.env.NODE_ENV === 'local') {
-      const request = context.switchToHttp().getRequest();
-      request.user = {
-        userId: '00000000-0000-0000-0000-000000000001',
-        username: 'super-admin@local.dev',
-        role: 'admin',
-      };
-      return true;
-    }
-
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers['authorization'] as string;
     let accessToken = authHeader?.split(' ')[1];

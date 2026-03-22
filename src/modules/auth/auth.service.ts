@@ -76,12 +76,7 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
-    const endpoint = this.configService.get<string>('AWS_ENDPOINT');
-    const nodeEnv = this.configService.get<string>('NODE_ENV');
-    this.cognitoClient = new CognitoIdentityProviderClient({
-      region,
-      ...(nodeEnv === 'local' && endpoint ? { endpoint } : {}),
-    });
+    this.cognitoClient = new CognitoIdentityProviderClient({ region });
   }
 
   async signUp(dto: SignUpDto) {
