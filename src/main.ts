@@ -1,11 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import * as path from 'path';
 import * as fs from 'fs';
+
+const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -33,6 +35,6 @@ async function bootstrap() {
 
   const port = process.env.PORT || 5007;
   await app.listen(port);
-  console.log(`Learn Spanish Backend running on port ${port}`);
+  logger.log(`LingoQ backend running on port ${port}`);
 }
 bootstrap();

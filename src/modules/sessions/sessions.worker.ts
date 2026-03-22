@@ -7,7 +7,7 @@ import { SessionSummary } from 'src/entities/session-summary.entity';
 import { Homework } from 'src/entities/homework.entity';
 import { HomeworkQuestion } from 'src/entities/homework-question.entity';
 import { PgBossService } from 'src/modules/pg-boss/pg-boss.service';
-import { LambdaService } from 'src/modules/lambda/lambda.service';
+import { SubtitleExtractorService } from 'src/modules/lambda/subtitle-extractor.service';
 import { SupabaseService } from 'src/modules/supabase/supabase.service';
 import { ClaudeService, LearnerContext } from 'src/modules/claude/claude.service';
 import { LoggerService } from 'src/modules/logger/logger.service';
@@ -63,7 +63,7 @@ export class SessionsWorker implements OnModuleInit {
     @InjectRepository(HomeworkQuestion)
     private readonly questionRepository: Repository<HomeworkQuestion>,
     private readonly pgBossService: PgBossService,
-    private readonly lambdaService: LambdaService,
+    private readonly subtitleExtractorService: SubtitleExtractorService,
     private readonly supabaseService: SupabaseService,
     private readonly claudeService: ClaudeService,
     private readonly logger: LoggerService,
@@ -97,9 +97,10 @@ export class SessionsWorker implements OnModuleInit {
 
       const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel };
 
-      // Step 1: Invoke Lambda to get subtitles
+      // Step 1: Extract subtitles (via Supadata or Lambda depending on SUBTITLE_EXTRACTOR_MODE)
       this.logger.log(`Processing session ${sessionId}: Extracting subtitles...`);
-      const lambdaResult = await this.lambdaService.extractSubtitles(youtubeUrl, youtubeVideoId);
+      const targetLangCode = LANGUAGE_NAME_TO_CODES[targetLanguage.toLowerCase()]?.[0];
+      const lambdaResult = await this.subtitleExtractorService.extractSubtitles(youtubeUrl, youtubeVideoId, targetLangCode);
 
       if (lambdaResult.statusCode !== 200 || !lambdaResult.subtitles) {
         throw new Error(lambdaResult.errorMessage || 'Failed to extract subtitles');
