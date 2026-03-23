@@ -131,6 +131,10 @@ export class FlashcardsService {
     }
 
     const cards = [...reviewCards, ...newCards];
+    this.logger.log(
+      `[getDueCards] userId=${userId} dailyLimit=${dailyLimit} reviewCards=${reviewCards.length} newCards=${newCards.length} total=${cards.length}`,
+      'FlashcardsService',
+    );
     return { cards, totalDue: cards.length };
   }
 
@@ -181,6 +185,11 @@ export class FlashcardsService {
 
     const { totalDue } = await this.getDueCards(userId);
     const remainingToday = Math.max(0, totalDue);
+
+    this.logger.log(
+      `[getStats] userId=${userId} dailyLimit=${settings.dailyLimit} reviewedToday=${reviewedToday} totalDue=${totalDue} remainingToday=${remainingToday}`,
+      'FlashcardsService',
+    );
 
     return { reviewedToday, remainingToday };
   }
