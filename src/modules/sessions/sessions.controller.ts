@@ -45,6 +45,12 @@ export class SessionsController {
     await this.sessionsService.retrySession(user.userId, id);
   }
 
+  @Post(':id/fetch-thumbnail')
+  @HttpCode(204)
+  async fetchThumbnail(@GetUser() user: UserDTO, @Param('id') id: string) {
+    await this.sessionsService.fetchThumbnail(user.userId, id);
+  }
+
   @Delete(':id')
   async deleteSession(@GetUser() user: UserDTO, @Param('id') id: string) {
     await this.sessionsService.deleteSession(user.userId, id);

@@ -6,6 +6,8 @@ import { JobStatus } from 'src/enums/job-status.enum';
 import { PgBossService } from 'src/modules/pg-boss/pg-boss.service';
 import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
 import { OnboardingService } from 'src/modules/onboarding/onboarding.service';
+import { SupabaseService } from 'src/modules/supabase/supabase.service';
+import { LoggerService } from 'src/modules/logger/logger.service';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CreateSessionDto {
@@ -20,6 +22,8 @@ export class SessionsService {
     private readonly sessionRepository: Repository<LearningSession>,
     private readonly pgBossService: PgBossService,
     private readonly onboardingService: OnboardingService,
+    private readonly supabaseService: SupabaseService,
+    private readonly logger: LoggerService,
   ) {}
 
   async createSession(userId: string, dto: CreateSessionDto): Promise<LearningSession> {
@@ -146,5 +150,40 @@ export class SessionsService {
       jobStatus: status,
       ...(errorMessage ? { errorMessage } : {}),
     });
+  }
+
+  async fetchThumbnail(userId: string, sessionId: string): Promise<void> {
+    const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
+    if (!session) throw new NotFoundException('Session not found');
+    if (session.thumbnailUrl) return; // already have one
+
+    // Run in background — don't await
+    this.doFetchThumbnail(sessionId, session.youtubeVideoId).catch(() => {});
+  }
+
+  private async doFetchThumbnail(sessionId: string, youtubeVideoId: string): Promise<void> {
+    try {
+      const candidates = [
+        `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+        `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+      ];
+      let buffer: Buffer | null = null;
+      for (const url of candidates) {
+        const res = await fetch(url);
+        if (res.ok) {
+          buffer = Buffer.from(await res.arrayBuffer());
+          break;
+        }
+      }
+      if (!buffer) return;
+
+      const thumbnailUrl = await this.supabaseService.uploadThumbnail(youtubeVideoId, buffer, 'image/jpeg');
+      if (thumbnailUrl) {
+        await this.sessionRepository.update(sessionId, { thumbnailUrl });
+        this.logger.log(`Thumbnail backfilled for session ${sessionId}`, 'SessionsService');
+      }
+    } catch (err) {
+      this.logger.warn(`Thumbnail backfill failed for session ${sessionId}: ${err.message}`, 'SessionsService');
+    }
   }
 }
