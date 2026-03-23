@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { GetUser } from 'src/decorators/user.decorator';
 import { UserDTO } from 'src/dtos/user.dto';
@@ -28,6 +28,11 @@ export class FlashcardsController {
   @Get('stats')
   async getStats(@GetUser() user: UserDTO) {
     return this.flashcardsService.getStats(user.userId);
+  }
+
+  @Get('extra')
+  async getExtraCards(@GetUser() user: UserDTO, @Query('limit') limit?: string) {
+    return this.flashcardsService.getExtraCards(user.userId, limit ? Math.min(+limit, 50) : 10);
   }
 
   @Get('settings')

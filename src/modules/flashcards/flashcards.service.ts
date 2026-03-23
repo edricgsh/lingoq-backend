@@ -207,4 +207,30 @@ export class FlashcardsService {
     const { totalDue } = await this.getDueCards(userId);
     return totalDue;
   }
+
+  async getExtraCards(userId: string, limit: number): Promise<{ cards: DueCard[] }> {
+    const progress = await this.progressRepo.find({
+      where: { userId },
+      relations: ['vocabItem'],
+      order: { easeFactor: 'ASC', interval: 'ASC' },
+      take: limit,
+    });
+
+    const cards: DueCard[] = progress
+      .filter((p) => p.vocabItem)
+      .map((p) => ({
+        vocabItemId: p.vocabItemId,
+        word: p.vocabItem.word,
+        partOfSpeech: p.vocabItem.partOfSpeech ?? null,
+        definition: p.vocabItem.definition ?? null,
+        examples: p.vocabItem.examples ?? null,
+        audioUrl: p.vocabItem.audioUrl ?? null,
+        isNew: false,
+        easeFactor: p.easeFactor,
+        interval: p.interval,
+        repetitions: p.repetitions,
+      }));
+
+    return { cards };
+  }
 }
