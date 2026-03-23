@@ -35,7 +35,7 @@ export interface EmailTemplate {
 @Injectable()
 export class AdminService {
   private sesClient: SESClient;
-  private readonly FROM_EMAIL = 'noreply@lingoq.study';
+  private readonly FROM_EMAIL: string;
 
   constructor(
     private readonly pgBossService: PgBossService,
@@ -44,6 +44,7 @@ export class AdminService {
   ) {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
     this.sesClient = new SESClient({ region }); // always use real AWS (never LocalStack)
+    this.FROM_EMAIL = this.configService.get<string>('SES_FROM_ADDRESS', 'noreply@dev.lingoq.study');
   }
 
   async triggerJob(queue: PgBossQueueEnum, payload: Record<string, any>): Promise<{ jobId: string | null; queue: string; triggeredAt: string }> {
