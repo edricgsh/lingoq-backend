@@ -70,6 +70,7 @@ export class FlashcardsService {
 
     const reviewCards: DueCard[] = dueProgress
       .filter((p) => p.vocabItem)
+      .slice(0, dailyLimit)
       .map((p) => ({
         vocabItemId: p.vocabItemId,
         word: p.vocabItem.word,
