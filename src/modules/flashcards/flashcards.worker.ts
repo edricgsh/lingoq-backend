@@ -15,24 +15,20 @@ interface SendReminderJobData {
 @Injectable()
 export class FlashcardsWorker implements OnModuleInit {
   private sesClient: SESClient;
-  private readonly FROM_EMAIL = 'noreply@lingoq.study';
+  private readonly FROM_EMAIL: string;
 
   constructor(
     private readonly pgBossService: PgBossService,
     private readonly flashcardsService: FlashcardsService,
     private readonly logger: LoggerService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.FROM_EMAIL = this.configService.get<string>('SES_FROM_ADDRESS', 'noreply@dev.lingoq.study');
+  }
 
   async onModuleInit() {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
-    const endpoint = this.configService.get<string>('AWS_ENDPOINT');
-    const nodeEnv = this.configService.get<string>('NODE_ENV');
-
-    this.sesClient = new SESClient({
-      region,
-      ...(nodeEnv === 'local' && endpoint ? { endpoint } : {}),
-    });
+    this.sesClient = new SESClient({ region }); // always use real AWS (never LocalStack)
 
     await this.registerScheduler();
     await this.registerReminderWorker();

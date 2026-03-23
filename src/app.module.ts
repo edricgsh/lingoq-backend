@@ -20,6 +20,7 @@ import { HomeworkModule } from 'src/modules/homework/homework.module';
 import { HealthModule } from 'src/modules/health/health.module';
 import { TtsModule } from 'src/modules/tts/tts.module';
 import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
+import { AdminModule } from 'src/modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
     HealthModule,
     TtsModule,
     FlashcardsModule,
+    AdminModule,
   ],
   providers: [
     {
