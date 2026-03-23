@@ -11,10 +11,10 @@ const configService = new ConfigService();
 export const AppDataSource = new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
+  port: parseInt(process.env.DB_PORT || '5433'),
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'learn_spanish',
+  database: process.env.DB_NAME || 'postgres',
   schema: 'lingoq',
   extra: {
     options: `-c search_path=lingoq`,

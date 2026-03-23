@@ -19,7 +19,8 @@ export class SupabaseService implements OnModuleInit {
     this.isLocal = this.configService.get<string>('NODE_ENV') === 'local';
     this.uploadsDir = path.join(process.cwd(), 'uploads');
     const port = this.configService.get<string>('PORT') || '5007';
-    this.backendUrl = `http://localhost:${port}`;
+    // BACKEND_PUBLIC_URL allows mobile/LAN access; falls back to localhost for local dev
+    this.backendUrl = this.configService.get<string>('BACKEND_PUBLIC_URL') || `http://localhost:${port}`;
   }
 
   async onModuleInit() {

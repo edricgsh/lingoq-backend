@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
@@ -11,6 +11,11 @@ import { Homework } from 'src/entities/homework.entity';
 import { HomeworkQuestion } from 'src/entities/homework-question.entity';
 import { HomeworkSubmission } from 'src/entities/homework-submission.entity';
 import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
+import { AllowedEmail } from 'src/entities/allowed-email.entity';
+import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
+import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
+import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
+import { VideoContent } from 'src/entities/video-content.entity';
 
 @Module({
   imports: [
@@ -19,13 +24,19 @@ import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
       inject: [AwsSecretsService],
       useFactory: async (secretsService: AwsSecretsService) => {
         const secrets = await secretsService.getSecret();
+        const logger = new Logger('DatabaseModule');
+        const host = secrets.DB_HOST || 'localhost';
+        const port = parseInt(secrets.DB_PORT || '5433');
+        const database = secrets.DB_NAME || 'learn_spanish';
+        const username = secrets.DB_USERNAME || 'postgres';
+        logger.log(`Connecting to postgres://${username}@${host}:${port}/${database} (schema: lingoq)`);
         return {
           type: 'postgres',
-          host: secrets.DB_HOST || 'localhost',
-          port: parseInt(secrets.DB_PORT || '5432'),
-          username: secrets.DB_USERNAME || 'postgres',
+          host,
+          port,
+          username,
           password: secrets.DB_PASSWORD || 'postgres',
-          database: secrets.DB_NAME || 'learn_spanish',
+          database,
           schema: 'lingoq',
           extra: {
             options: `-c search_path=lingoq`,
@@ -40,6 +51,11 @@ import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
             HomeworkQuestion,
             HomeworkSubmission,
             HomeworkAnswer,
+            AllowedEmail,
+            FlashcardProgress,
+            FlashcardSettings,
+            SubtitleCache,
+            VideoContent,
           ],
           synchronize: true, // Use only in development; use migrations in prod
           logging: false,

@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,6 +23,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { User } from 'src/entities/user.entity';
 import { UserOnboarding } from 'src/entities/user-onboarding.entity';
+import { AllowedEmail } from 'src/entities/allowed-email.entity';
 import { UserRole } from 'src/enums/user-role.enum';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { ConfigService } from '@nestjs/config';
@@ -67,19 +69,37 @@ export interface ResetPasswordDto {
 export class AuthService {
   private cognitoClient: CognitoIdentityProviderClient;
 
+  private readonly isBetaMode: boolean;
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(UserOnboarding)
     private readonly onboardingRepository: Repository<UserOnboarding>,
+    @InjectRepository(AllowedEmail)
+    private readonly allowedEmailRepository: Repository<AllowedEmail>,
     private readonly secretsService: AwsSecretsService,
     private readonly configService: ConfigService,
   ) {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
     this.cognitoClient = new CognitoIdentityProviderClient({ region });
+    this.isBetaMode = this.configService.get<string>('BETA_MODE') === 'true';
+  }
+
+  private async assertAllowlisted(email: string): Promise<void> {
+    if (!this.isBetaMode) return;
+    const entry = await this.allowedEmailRepository.findOne({
+      where: { email: email.toLowerCase() },
+    });
+    if (!entry) {
+      throw new ForbiddenException(
+        'This app is currently in beta. Your email is not on the allowlist.',
+      );
+    }
   }
 
   async signUp(dto: SignUpDto) {
+    await this.assertAllowlisted(dto.email);
     const secrets = await this.secretsService.getSecret();
     try {
       await this.cognitoClient.send(
@@ -103,6 +123,7 @@ export class AuthService {
   }
 
   async signIn(dto: SignInDto) {
+    await this.assertAllowlisted(dto.email);
     const secrets = await this.secretsService.getSecret();
     try {
       const result = await this.cognitoClient.send(

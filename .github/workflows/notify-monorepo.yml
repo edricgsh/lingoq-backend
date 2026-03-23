@@ -1,0 +1,33 @@
+name: Notify Monorepo
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine event type
+        id: event
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "type=backend-build-check" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_name }}" == "develop" ]]; then
+            echo "type=backend-deploy-dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=backend-deploy-production" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send repository_dispatch to monorepo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.MONOREPO_DISPATCH_TOKEN }}
+          repository: edricgsh/lingoq
+          event-type: ${{ steps.event.outputs.type }}
+          client-payload: '{"branch": "${{ github.ref_name }}", "sha": "${{ github.sha }}"}'

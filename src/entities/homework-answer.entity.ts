@@ -19,10 +19,13 @@ export class HomeworkAnswer extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   feedback: string;
 
+  @Column({ name: 'corrected_text', type: 'text', nullable: true })
+  correctedText: string | null;
+
   @Column({ nullable: true })
   score: number;
 
-  @ManyToOne(() => HomeworkSubmission, (submission) => submission.answers)
+  @ManyToOne(() => HomeworkSubmission, (submission) => submission.answers, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'submission_id' })
   submission: HomeworkSubmission;
 }
