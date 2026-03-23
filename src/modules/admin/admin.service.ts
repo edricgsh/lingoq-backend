@@ -43,13 +43,7 @@ export class AdminService {
     private readonly configService: ConfigService,
   ) {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
-    const endpoint = this.configService.get<string>('AWS_ENDPOINT');
-    const nodeEnv = this.configService.get<string>('NODE_ENV');
-
-    this.sesClient = new SESClient({
-      region,
-      ...(nodeEnv === 'local' && endpoint ? { endpoint } : {}),
-    });
+    this.sesClient = new SESClient({ region }); // always use real AWS (never LocalStack)
   }
 
   async triggerJob(queue: PgBossQueueEnum, payload: Record<string, any>): Promise<{ jobId: string | null; queue: string; triggeredAt: string }> {

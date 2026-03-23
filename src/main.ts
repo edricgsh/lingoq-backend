@@ -6,6 +6,8 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import * as path from 'path';
 import * as fs from 'fs';
+import { LoggerService } from 'src/modules/logger/logger.service';
+import { RequestLoggerInterceptor } from 'src/shared/interceptors/request-logging.interceptor';
 
 const logger = new Logger('Bootstrap');
 
@@ -35,6 +37,9 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     exposedHeaders: ['set-cookie'],
   });
+
+  const loggerService = app.get(LoggerService);
+  app.useGlobalInterceptors(new RequestLoggerInterceptor(loggerService));
 
   app.useGlobalPipes(
     new ValidationPipe({

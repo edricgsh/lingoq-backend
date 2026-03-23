@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { IsString, IsOptional, IsObject } from 'class-validator';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/shared/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -9,13 +10,23 @@ import { UserDTO } from 'src/dtos/user.dto';
 import { AdminService } from './admin.service';
 
 class TriggerJobDto {
+  @IsString()
   queue: PgBossQueueEnum;
+
+  @IsOptional()
+  @IsObject()
   payload: Record<string, any>;
 }
 
 class SendTestEmailDto {
+  @IsString()
   recipientEmail: string;
+
+  @IsString()
   templateName: string;
+
+  @IsOptional()
+  @IsObject()
   templateData: Record<string, any>;
 }
 

@@ -26,13 +26,7 @@ export class FlashcardsWorker implements OnModuleInit {
 
   async onModuleInit() {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
-    const endpoint = this.configService.get<string>('AWS_ENDPOINT');
-    const nodeEnv = this.configService.get<string>('NODE_ENV');
-
-    this.sesClient = new SESClient({
-      region,
-      ...(nodeEnv === 'local' && endpoint ? { endpoint } : {}),
-    });
+    this.sesClient = new SESClient({ region }); // always use real AWS (never LocalStack)
 
     await this.registerScheduler();
     await this.registerReminderWorker();

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { LoggerService } from 'src/modules/logger/logger.service';
+import { AppError } from 'src/shared/utils/error-utils';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -19,9 +20,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string;
+    let errorCode: string | undefined;
+    let appErrorDetails: unknown;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof AppError) {
+      status = exception.statusCode;
+      message = exception.message;
+      errorCode = exception.code;
+      appErrorDetails = exception.details;
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
+
       if (status === HttpStatus.UNAUTHORIZED) {
         message = 'Unauthorized';
       } else if (status === HttpStatus.BAD_REQUEST) {
@@ -42,13 +51,33 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     const errorPath = `${request.protocol}://${request.get('host')}${request.originalUrl}`;
-    this.logger.error(`| Path: ${errorPath} | ErrorMessage: ${message} | Status: ${status}`);
+    const logMessage = `| Path: ${errorPath} | ErrorMessage: ${message} | Status: ${status} | Exception: ${this.serializeError(exception)}`;
+    this.logger.error(logMessage);
 
     response.status(status).json({
       StatusCode: status,
       Message: message,
+      ErrorCode: errorCode,
+      ErrorDetails: appErrorDetails,
       IsSuccess: false,
       Data: null,
     });
+  }
+
+  private serializeError(exception: unknown): string {
+    try {
+      if (exception instanceof Error) {
+        return JSON.stringify({
+          name: exception.name,
+          message: exception.message,
+          stack: exception.stack,
+          ...(exception as any).code !== undefined && { code: (exception as any).code },
+          ...(exception as any).details !== undefined && { details: (exception as any).details },
+        });
+      }
+      return JSON.stringify({ error: String(exception) });
+    } catch {
+      return '[Unable to serialize error]';
+    }
   }
 }
