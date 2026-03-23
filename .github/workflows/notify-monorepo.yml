@@ -28,6 +28,6 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.MONOREPO_DISPATCH_TOKEN }}
-          repository: edricgsh/lingoq
+          repository: edricgsh/lingoq-monorepo
           event-type: ${{ steps.event.outputs.type }}
           client-payload: '{"branch": "${{ github.ref_name }}", "sha": "${{ github.sha }}"}'
