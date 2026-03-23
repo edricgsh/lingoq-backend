@@ -42,8 +42,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
 
     const errorPath = `${request.protocol}://${request.get('host')}${request.originalUrl}`;
-    const stack = exception instanceof Error ? exception.stack : '';
-    this.logger.error(`| Path: ${errorPath} | ErrorMessage: ${message} | Status: ${status}\n${stack}`);
+    this.logger.error(`| Path: ${errorPath} | ErrorMessage: ${message} | Status: ${status}`);
 
     response.status(status).json({
       StatusCode: status,
