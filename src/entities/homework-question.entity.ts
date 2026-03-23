@@ -33,7 +33,7 @@ export class HomeworkQuestion extends BaseEntity {
   @Column({ name: 'video_hint_url', type: 'text', nullable: true })
   videoHintUrl: string | null;
 
-  @ManyToOne(() => Homework, (homework) => homework.questions)
+  @ManyToOne(() => Homework, (homework) => homework.questions, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'homework_id' })
   homework: Homework;
 }

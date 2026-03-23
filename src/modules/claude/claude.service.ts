@@ -42,6 +42,7 @@ export interface GradeAnswerResult {
   isCorrect: boolean;
   score: number;
   feedback: string;
+  correctedText?: string | null;
 }
 
 export interface GradeResult {
@@ -204,6 +205,7 @@ For each answer provide:
 - isCorrect: boolean (for comprehension/fill_in_blank; null for free_writing)
 - score: 0-100
 - feedback: constructive feedback in ${context.nativeLanguage}
+- correctedText: for non-multiple-choice questions where the answer has errors, provide a corrected version of the student's answer in ${context.targetLanguage}. Set to null if the answer is already correct or is multiple choice.
 
 Also provide:
 - overallScore: 0-100 average
