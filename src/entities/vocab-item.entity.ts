@@ -1,11 +1,11 @@
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { LearningSession } from './learning-session.entity';
+import { VideoContent } from './video-content.entity';
 
 @Entity({ name: 'vocab_items', schema: 'lingoq' })
 export class VocabItem extends BaseEntity {
-  @Column({ name: 'session_id' })
-  sessionId: string;
+  @Column({ name: 'video_content_id' })
+  videoContentId: string;
 
   @Column()
   word: string;
@@ -28,7 +28,7 @@ export class VocabItem extends BaseEntity {
   @Column({ name: 'audio_url', nullable: true })
   audioUrl: string;
 
-  @ManyToOne(() => LearningSession, (session) => session.vocabItems)
-  @JoinColumn({ name: 'session_id' })
-  session: LearningSession;
+  @ManyToOne(() => VideoContent, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'video_content_id' })
+  videoContent: VideoContent;
 }

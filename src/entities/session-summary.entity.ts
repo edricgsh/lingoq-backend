@@ -1,11 +1,11 @@
-import { Column, Entity, JoinColumn, OneToOne } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { LearningSession } from './learning-session.entity';
+import { VideoContent } from './video-content.entity';
 
 @Entity({ name: 'session_summaries', schema: 'lingoq' })
 export class SessionSummary extends BaseEntity {
-  @Column({ name: 'session_id' })
-  sessionId: string;
+  @Column({ name: 'video_content_id' })
+  videoContentId: string;
 
   @Column({ name: 'summary_target_lang', type: 'text', nullable: true })
   summaryTargetLang: string;
@@ -16,7 +16,7 @@ export class SessionSummary extends BaseEntity {
     translation: string;
   }>;
 
-  @OneToOne(() => LearningSession, (session) => session.summary)
-  @JoinColumn({ name: 'session_id' })
-  session: LearningSession;
+  @ManyToOne(() => VideoContent, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'video_content_id' })
+  videoContent: VideoContent;
 }

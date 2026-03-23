@@ -32,15 +32,22 @@ export class HomeworkService {
     private readonly onboardingService: OnboardingService,
   ) {}
 
-  async getHomework(sessionId: string, userId: string): Promise<Homework> {
+  private async resolveSessionAndHomework(sessionId: string, userId: string): Promise<{ session: LearningSession; homework: Homework }> {
     const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
     if (!session) throw new NotFoundException('Session not found');
 
     const homework = await this.homeworkRepository.findOne({
-      where: { sessionId },
+      where: { videoContentId: session.videoContentId },
       relations: ['questions'],
+      order: { createdAt: 'DESC' } as any,
     });
     if (!homework) throw new NotFoundException('Homework not found');
+
+    return { session, homework };
+  }
+
+  async getHomework(sessionId: string, userId: string): Promise<Homework> {
+    const { homework } = await this.resolveSessionAndHomework(sessionId, userId);
     return homework;
   }
 
@@ -50,11 +57,7 @@ export class HomeworkService {
     questionId: string,
     dto: SubmitQuestionDto,
   ): Promise<HomeworkSubmission> {
-    const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
-    if (!session) throw new NotFoundException('Session not found');
-
-    const homework = await this.homeworkRepository.findOne({ where: { sessionId } });
-    if (!homework) throw new NotFoundException('Homework not found');
+    const { session, homework } = await this.resolveSessionAndHomework(sessionId, userId);
 
     const question = await this.questionRepository.findOne({ where: { id: questionId, homeworkId: homework.id } });
     if (!question) throw new NotFoundException('Question not found');
@@ -64,6 +67,7 @@ export class HomeworkService {
     let score: number;
     let isCorrect: boolean | null = null;
     let feedback = '';
+    let correctedText: string | null = null;
 
     if (question.questionType === QuestionType.MULTIPLE_CHOICE) {
       isCorrect = dto.answerText === question.correctAnswer;
@@ -82,6 +86,7 @@ export class HomeworkService {
       score = gradedAnswer?.score ?? 0;
       isCorrect = gradedAnswer?.isCorrect ?? null;
       feedback = gradedAnswer?.feedback ?? '';
+      correctedText = gradedAnswer?.correctedText ?? null;
     }
 
     const submission = this.submissionRepository.create({
@@ -89,6 +94,7 @@ export class HomeworkService {
       homeworkId: homework.id,
       questionId,
       userId,
+      userSessionId: session.id,
       score,
       overallFeedback: feedback,
       submittedAt: new Date(),
@@ -103,6 +109,7 @@ export class HomeworkService {
       isCorrect,
       score,
       feedback,
+      correctedText,
     });
     await this.answerRepository.save(answer);
 
@@ -113,14 +120,10 @@ export class HomeworkService {
   }
 
   async getQuestionSubmissions(sessionId: string, userId: string, questionId: string): Promise<HomeworkSubmission[]> {
-    const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
-    if (!session) throw new NotFoundException('Session not found');
-
-    const homework = await this.homeworkRepository.findOne({ where: { sessionId } });
-    if (!homework) throw new NotFoundException('Homework not found');
+    const { homework } = await this.resolveSessionAndHomework(sessionId, userId);
 
     return this.submissionRepository.find({
-      where: { homeworkId: homework.id, questionId, userId },
+      where: { homeworkId: homework.id, questionId, userSessionId: sessionId },
       relations: ['answers'],
       order: { submittedAt: 'DESC' },
     });

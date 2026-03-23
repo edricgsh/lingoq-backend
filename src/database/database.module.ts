@@ -14,6 +14,8 @@ import { HomeworkAnswer } from 'src/entities/homework-answer.entity';
 import { AllowedEmail } from 'src/entities/allowed-email.entity';
 import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
 import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
+import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
+import { VideoContent } from 'src/entities/video-content.entity';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
             AllowedEmail,
             FlashcardProgress,
             FlashcardSettings,
+            SubtitleCache,
+            VideoContent,
           ],
           synchronize: true, // Use only in development; use migrations in prod
           logging: false,

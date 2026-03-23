@@ -66,10 +66,18 @@ export class FlashcardsService {
     const dueProgress = await this.progressRepo.find({
       where: { userId, nextReviewAt: LessThanOrEqual(now) },
       relations: ['vocabItem'],
+      order: { nextReviewAt: 'ASC' },
     });
 
+    const seenReviewWords = new Set<string>();
     const reviewCards: DueCard[] = dueProgress
-      .filter((p) => p.vocabItem)
+      .filter((p) => {
+        if (!p.vocabItem) return false;
+        const key = p.vocabItem.word.toLowerCase().trim();
+        if (seenReviewWords.has(key)) return false;
+        seenReviewWords.add(key);
+        return true;
+      })
       .slice(0, dailyLimit)
       .map((p) => ({
         vocabItemId: p.vocabItemId,
@@ -95,25 +103,37 @@ export class FlashcardsService {
       });
       const seenVocabIds = existingProgressIds.map((p) => p.vocabItemId);
 
-      // Get completed sessions for this user
-      const sessions = await this.sessionRepo.find({
-        where: { userId, jobStatus: JobStatus.COMPLETED },
-        order: { createdAt: 'DESC' },
-        select: ['id'],
-      });
-      const sessionIds = sessions.map((s) => s.id);
+      // Get videoContentIds for completed sessions belonging to this user
+      const sessions = await this.sessionRepo
+        .createQueryBuilder('s')
+        .innerJoin('s.videoContent', 'vc')
+        .where('s.userId = :userId', { userId })
+        .andWhere('vc.jobStatus = :status', { status: JobStatus.COMPLETED })
+        .select('s.videoContentId', 'videoContentId')
+        .orderBy('s.createdAt', 'DESC')
+        .getRawMany();
 
-      if (sessionIds.length > 0) {
-        const whereClause: any = { sessionId: In(sessionIds) };
+      const videoContentIds = sessions.map((s) => s.videoContentId);
+
+      if (videoContentIds.length > 0) {
+        const whereClause: any = { videoContentId: In(videoContentIds) };
         if (seenVocabIds.length > 0) {
           whereClause.id = Not(In(seenVocabIds));
         }
 
-        const newVocabItems = await this.vocabRepo.find({
+        const newVocabItemsRaw = await this.vocabRepo.find({
           where: whereClause,
           order: { createdAt: 'ASC' },
-          take: remaining,
+          take: remaining * 5, // over-fetch to allow dedup
         });
+
+        const seenNewWords = new Set<string>();
+        const newVocabItems = newVocabItemsRaw.filter((v) => {
+          const key = v.word.toLowerCase().trim();
+          if (seenNewWords.has(key)) return false;
+          seenNewWords.add(key);
+          return true;
+        }).slice(0, remaining);
 
         newCards = newVocabItems.map((v) => ({
           vocabItemId: v.id,
@@ -216,8 +236,15 @@ export class FlashcardsService {
       take: limit,
     });
 
+    const seenExtraWords = new Set<string>();
     const cards: DueCard[] = progress
-      .filter((p) => p.vocabItem)
+      .filter((p) => {
+        if (!p.vocabItem) return false;
+        const key = p.vocabItem.word.toLowerCase().trim();
+        if (seenExtraWords.has(key)) return false;
+        seenExtraWords.add(key);
+        return true;
+      })
       .map((p) => ({
         vocabItemId: p.vocabItemId,
         word: p.vocabItem.word,
