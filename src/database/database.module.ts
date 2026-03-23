@@ -57,7 +57,7 @@ import { VideoContent } from 'src/entities/video-content.entity';
             SubtitleCache,
             VideoContent,
           ],
-          synchronize: true, // Use only in development; use migrations in prod
+          synchronize: false,
           logging: false,
         };
       },

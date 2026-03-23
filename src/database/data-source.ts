@@ -1,12 +1,9 @@
 import { DataSource } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import * as dotenv from 'dotenv';
 
 dotenv.config({ path: `.env.${process.env.NODE_ENV || 'local'}` });
 
-// For CLI migrations, we need to import secrets differently
-// In local, read from env vars set up manually
-const configService = new ConfigService();
+const DB_SCHEMA = 'lingoq';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -15,12 +12,12 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
   database: process.env.DB_NAME || 'postgres',
-  schema: 'lingoq',
+  schema: DB_SCHEMA,
   extra: {
-    options: `-c search_path=lingoq`,
+    options: `-c search_path=${DB_SCHEMA}`,
   },
-  entities: [__dirname + '/../entities/*.entity{.ts,.js}'],
-  migrations: [__dirname + '/migrations/*{.ts,.js}'],
+  entities: [__dirname + '/../entities/*.entity.js'],
+  migrations: [__dirname + '/migrations/*.js'],
   synchronize: false,
   logging: true,
 });
