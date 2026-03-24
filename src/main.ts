@@ -4,8 +4,6 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import * as path from 'path';
-import * as fs from 'fs';
 import { LoggerService } from 'src/modules/logger/logger.service';
 import { RequestLoggerInterceptor } from 'src/shared/interceptors/request-logging.interceptor';
 
@@ -13,12 +11,6 @@ const logger = new Logger('Bootstrap');
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
-  if (process.env.NODE_ENV === 'local') {
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
-  }
 
   app.use(helmet());
   app.use(cookieParser());

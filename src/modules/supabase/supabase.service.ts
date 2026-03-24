@@ -2,79 +2,64 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
-import * as fs from 'fs';
-import * as path from 'path';
+import { LoggerService } from 'src/modules/logger/logger.service';
 
 @Injectable()
 export class SupabaseService implements OnModuleInit {
   private client: SupabaseClient | null = null;
-  private isLocal: boolean;
-  private uploadsDir: string;
-  private backendUrl: string;
+  private bucket: string | null = null;
 
   constructor(
     private readonly secretsService: AwsSecretsService,
     private readonly configService: ConfigService,
-  ) {
-    this.isLocal = this.configService.get<string>('NODE_ENV') === 'local';
-    this.uploadsDir = path.join(process.cwd(), 'uploads');
-    const port = this.configService.get<string>('PORT') || '5007';
-    // BACKEND_PUBLIC_URL allows mobile/LAN access; falls back to localhost for local dev
-    this.backendUrl = this.configService.get<string>('BACKEND_PUBLIC_URL') || `http://localhost:${port}`;
-  }
+    private readonly logger: LoggerService,
+  ) {}
 
   async onModuleInit() {
-    if (this.isLocal) {
-      fs.mkdirSync(path.join(this.uploadsDir, 'thumbnails'), { recursive: true });
-      fs.mkdirSync(path.join(this.uploadsDir, 'audio'), { recursive: true });
-      return;
+    this.bucket = this.configService.get<string>('SUPABASE_BUCKET') ?? null;
+    if (!this.bucket) {
+      this.logger.warn('SUPABASE_BUCKET not set — uploads will be skipped', 'SupabaseService');
     }
 
     const secrets = await this.secretsService.getSecret();
     if (secrets.SUPABASE_URL && secrets.SUPABASE_URL !== 'REPLACE_ME') {
       this.client = createClient(secrets.SUPABASE_URL, secrets.SUPABASE_API_KEY);
+    } else {
+      this.logger.warn('Supabase not configured (SUPABASE_URL missing or placeholder)', 'SupabaseService');
     }
   }
 
   async uploadThumbnail(videoId: string, imageBuffer: Buffer, contentType: string): Promise<string | null> {
-    const fileName = `${videoId}.jpg`;
+    if (!this.client || !this.bucket) return null;
 
-    if (this.isLocal) {
-      const filePath = path.join(this.uploadsDir, 'thumbnails', fileName);
-      fs.writeFileSync(filePath, imageBuffer);
-      return `${this.backendUrl}/uploads/thumbnails/${fileName}`;
-    }
-
-    if (!this.client) return null;
-
-    const storagePath = `thumbnails/${fileName}`;
+    const storagePath = `thumbnails/${videoId}.jpg`;
     const { error } = await this.client.storage
-      .from('thumbnails')
+      .from(this.bucket)
       .upload(storagePath, imageBuffer, { contentType, upsert: true });
 
-    if (error) return null;
+    if (error) {
+      this.logger.warn(`Supabase thumbnail upload error: ${error.message}`, 'SupabaseService');
+      return null;
+    }
 
-    const { data } = this.client.storage.from('thumbnails').getPublicUrl(storagePath);
+    const { data } = this.client.storage.from(this.bucket).getPublicUrl(storagePath);
     return data.publicUrl;
   }
 
   async uploadAudio(fileName: string, audioBuffer: Buffer, contentType: string): Promise<string | null> {
-    if (this.isLocal) {
-      const filePath = path.join(this.uploadsDir, 'audio', fileName);
-      fs.writeFileSync(filePath, audioBuffer);
-      return `${this.backendUrl}/uploads/audio/${fileName}`;
-    }
-
-    if (!this.client) return null;
+    if (!this.client || !this.bucket) return null;
 
     const storagePath = `audio/${fileName}`;
     const { error } = await this.client.storage
-      .from('audio')
+      .from(this.bucket)
       .upload(storagePath, audioBuffer, { contentType, upsert: true });
 
-    if (error) return null;
+    if (error) {
+      this.logger.warn(`Supabase audio upload error: ${error.message}`, 'SupabaseService');
+      return null;
+    }
 
-    const { data } = this.client.storage.from('audio').getPublicUrl(storagePath);
+    const { data } = this.client.storage.from(this.bucket).getPublicUrl(storagePath);
     return data.publicUrl;
   }
 }
