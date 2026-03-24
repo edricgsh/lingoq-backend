@@ -62,6 +62,21 @@ async function runMigrations() {
       logger,
     );
 
+    // Create schema using a plain connection before initializing the main DataSource,
+    // because TypeORM needs the schema to exist before it can create the migrations table.
+    logger.log(`Ensuring schema "${DB_SCHEMA}" exists...`);
+    const bootstrapDs = new DataSource({
+      type: 'postgres',
+      host: databaseConfig.host,
+      port: databaseConfig.port,
+      username: databaseConfig.username,
+      password: databaseConfig.password,
+      database: databaseConfig.database,
+    });
+    await bootstrapDs.initialize();
+    await bootstrapDs.query(`CREATE SCHEMA IF NOT EXISTS "${DB_SCHEMA}"`);
+    await bootstrapDs.destroy();
+
     logger.log('Creating DataSource...');
     const dataSource = new DataSource(databaseConfig);
 
