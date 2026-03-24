@@ -195,6 +195,7 @@ export class SessionsWorker implements OnModuleInit {
           );
           if (thumbnailUrl) {
             await this.videoContentRepository.update(videoContentId, { thumbnailUrl });
+            this.logger.log(`Thumbnail uploaded successfully for videoContent ${videoContentId}: ${thumbnailUrl}`);
           } else {
             this.logger.warn(`uploadThumbnail returned no URL for videoContent ${videoContentId}`);
           }
