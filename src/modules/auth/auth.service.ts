@@ -15,6 +15,7 @@ import {
   GlobalSignOutCommand,
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
+  ResendConfirmationCodeCommand,
   NotAuthorizedException,
   UsernameExistsException,
   CodeMismatchException,
@@ -63,6 +64,10 @@ export interface ResetPasswordDto {
   email: string;
   code: string;
   newPassword: string;
+}
+
+export interface ResendConfirmationDto {
+  email: string;
 }
 
 @Injectable()
@@ -116,7 +121,9 @@ export class AuthService {
       return { message: 'Sign up successful. Check your email for a confirmation code.' };
     } catch (error) {
       if (error instanceof UsernameExistsException) {
-        throw new ConflictException('An account with this email already exists');
+        // Resend code so frontend can move directly to confirm step
+        await this.resendConfirmation({ email: dto.email }).catch(() => null);
+        throw new ConflictException('USER_EXISTS_UNCONFIRMED');
       }
       throw new BadRequestException(error.message);
     }
@@ -242,6 +249,21 @@ export class AuthService {
       if (error instanceof ExpiredCodeException) {
         throw new BadRequestException('Reset code has expired');
       }
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  async resendConfirmation(dto: ResendConfirmationDto) {
+    const secrets = await this.secretsService.getSecret();
+    try {
+      await this.cognitoClient.send(
+        new ResendConfirmationCodeCommand({
+          ClientId: secrets.COGNITO_CLIENT_ID,
+          Username: dto.email,
+        }),
+      );
+      return { message: 'Confirmation code resent' };
+    } catch (error) {
       throw new BadRequestException(error.message);
     }
   }

@@ -14,6 +14,7 @@ import {
   ConfirmSignUpDto,
   ForgotPasswordDto,
   RefreshTokenDto,
+  ResendConfirmationDto,
   ResetPasswordDto,
   SignInDto,
   SignUpDto,
@@ -74,6 +75,11 @@ export class AuthController {
   @Post('signup/confirmation')
   async confirmSignUp(@Body() body: ConfirmSignUpDto) {
     return this.authService.confirmSignUp(body);
+  }
+
+  @Post('signup/resend')
+  async resendConfirmation(@Body() body: ResendConfirmationDto) {
+    return this.authService.resendConfirmation(body);
   }
 
   @Post('refresh-token')
