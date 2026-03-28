@@ -16,6 +16,8 @@ import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
 import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
 import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
 import { VideoContent } from 'src/entities/video-content.entity';
+import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
+import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { VideoContent } from 'src/entities/video-content.entity';
             FlashcardSettings,
             SubtitleCache,
             VideoContent,
+            ExploreTopicQuery,
+            ExploreRecommendation,
           ],
           synchronize: false,
           logging: false,

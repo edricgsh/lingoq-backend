@@ -71,6 +71,15 @@ export class AdminService {
           { name: 'dueCount', type: 'number', required: true, description: 'Number of due cards' },
         ],
       },
+      {
+        queue: PgBossQueueEnum.EXPLORE_GENERATE_RECOMMENDATIONS,
+        label: 'Backfill Explore Recommendations',
+        description: 'Generate and cache YouTube recommendations for a user\'s interest topics',
+        payloadFields: [
+          { name: 'topics', type: 'string', required: true, description: 'Comma-separated topic names (e.g. food,travel,music)' },
+          { name: 'targetLanguage', type: 'string', required: true, description: 'Target language (e.g. Spanish)' },
+        ],
+      },
     ];
   }
 

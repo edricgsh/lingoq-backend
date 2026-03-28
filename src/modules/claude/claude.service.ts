@@ -169,6 +169,13 @@ Respond with ONLY a valid JSON object: { "questions": [...] }. No markdown, no e
     return JSON.parse(cleaned) as HomeworkResult;
   }
 
+  async generateSearchQueries(topic: string, targetLanguage: string): Promise<string[]> {
+    const prompt = `Generate 4 YouTube search queries for the topic "${topic}" that a native ${targetLanguage} speaker would use. Return ONLY a JSON array of strings, no markdown.`;
+    const response = await this.callClaude(prompt);
+    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    return JSON.parse(cleaned) as string[];
+  }
+
   async gradeHomework(
     questions: Array<{ id: string; questionType: string; questionText: string; expectedAnswer: string }>,
     answers: Array<{ questionId: string; answerText: string }>,

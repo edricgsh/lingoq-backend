@@ -4,12 +4,15 @@ import { Repository } from 'typeorm';
 import { UserOnboarding } from 'src/entities/user-onboarding.entity';
 import { ProficiencyLevel } from 'src/enums/proficiency-level.enum';
 import { User } from 'src/entities/user.entity';
+import { PgBossService } from 'src/modules/pg-boss/pg-boss.service';
+import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
 
 export interface CompleteOnboardingDto {
   nativeLanguage: string;
   targetLanguage: string;
   proficiencyLevel: ProficiencyLevel;
   learningGoals?: string;
+  interestTopics?: string[];
 }
 
 @Injectable()
@@ -19,6 +22,7 @@ export class OnboardingService {
     private readonly onboardingRepository: Repository<UserOnboarding>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly pgBossService: PgBossService,
   ) {}
 
   async getOnboarding(userId: string): Promise<UserOnboarding> {
@@ -38,9 +42,20 @@ export class OnboardingService {
     onboarding.targetLanguage = dto.targetLanguage;
     onboarding.proficiencyLevel = dto.proficiencyLevel;
     onboarding.learningGoals = dto.learningGoals;
+    onboarding.interestTopics = dto.interestTopics ?? [];
     onboarding.isComplete = true;
 
-    return this.onboardingRepository.save(onboarding);
+    const saved = await this.onboardingRepository.save(onboarding);
+
+    if (dto.interestTopics?.length > 0) {
+      await this.pgBossService.send(PgBossQueueEnum.EXPLORE_GENERATE_RECOMMENDATIONS, {
+        userId,
+        topics: dto.interestTopics,
+        targetLanguage: dto.targetLanguage,
+      });
+    }
+
+    return saved;
   }
 
   async updateOnboarding(userId: string, dto: Partial<CompleteOnboardingDto>): Promise<UserOnboarding> {

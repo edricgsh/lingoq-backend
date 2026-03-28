@@ -28,6 +28,9 @@ export class UserOnboarding extends BaseEntity {
   @Column({ name: 'learning_goals', type: 'text', nullable: true })
   learningGoals: string;
 
+  @Column({ name: 'interest_topics', type: 'jsonb', default: [] })
+  interestTopics: string[];
+
   @OneToOne(() => User, (user) => user.onboarding)
   @JoinColumn({ name: 'user_id' })
   user: User;

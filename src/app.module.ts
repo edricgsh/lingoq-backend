@@ -21,6 +21,7 @@ import { HealthModule } from 'src/modules/health/health.module';
 import { TtsModule } from 'src/modules/tts/tts.module';
 import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
 import { AdminModule } from 'src/modules/admin/admin.module';
+import { ExploreModule } from 'src/modules/explore/explore.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { AdminModule } from 'src/modules/admin/admin.module';
     TtsModule,
     FlashcardsModule,
     AdminModule,
+    ExploreModule,
   ],
   providers: [
     {
