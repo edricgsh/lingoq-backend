@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
+import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
 import { ClaudeService } from 'src/modules/claude/claude.service';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { LoggerService } from 'src/modules/logger/logger.service';
@@ -18,6 +19,8 @@ export class ExploreService {
     private readonly topicQueryRepo: Repository<ExploreTopicQuery>,
     @InjectRepository(ExploreRecommendation)
     private readonly recommendationRepo: Repository<ExploreRecommendation>,
+    @InjectRepository(SubtitleCache)
+    private readonly subtitleCacheRepo: Repository<SubtitleCache>,
     private readonly claudeService: ClaudeService,
     private readonly secretsService: AwsSecretsService,
     private readonly logger: LoggerService,
@@ -67,7 +70,7 @@ export class ExploreService {
     query: string,
     apiKey: string,
   ): Promise<void> {
-    const url = `https://api.supadata.ai/v1/youtube/search?query=${encodeURIComponent(query)}&type=video&limit=50&sortBy=relevance&uploadDate=year&duration=medium`;
+    const url = `https://api.supadata.ai/v1/youtube/search?query=${encodeURIComponent(query)}&type=video&limit=50&sortBy=relevance&uploadDate=year`;
     const res = await fetch(url, { headers: { 'x-api-key': apiKey } });
     if (!res.ok) {
       this.logger.warn(`Supadata search failed for query "${query}": ${res.status}`, 'ExploreService');
@@ -103,6 +106,11 @@ export class ExploreService {
         }),
       );
     }
+  }
+
+  async getSubtitlesByVideoId(videoId: string): Promise<string | null> {
+    const cached = await this.subtitleCacheRepo.findOne({ where: { youtubeVideoId: videoId } });
+    return cached?.subtitlesVtt ?? null;
   }
 
   async getRecommendations(

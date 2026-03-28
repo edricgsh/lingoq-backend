@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { GetUser } from 'src/decorators/user.decorator';
 import { UserDTO } from 'src/dtos/user.dto';
@@ -12,6 +12,12 @@ export class ExploreController {
     private readonly exploreService: ExploreService,
     private readonly onboardingService: OnboardingService,
   ) {}
+
+  @Get('subtitles/:videoId')
+  async getSubtitles(@Param('videoId') videoId: string) {
+    const vtt = await this.exploreService.getSubtitlesByVideoId(videoId);
+    return { vtt };
+  }
 
   @Get('recommendations')
   async getRecommendations(
