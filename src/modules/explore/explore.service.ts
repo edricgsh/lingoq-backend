@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThan, Repository } from 'typeorm';
+import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
 import { ClaudeService } from 'src/modules/claude/claude.service';
@@ -108,20 +108,25 @@ export class ExploreService {
   async getRecommendations(
     topics: string[],
     targetLanguage: string,
-  ): Promise<Array<{ topic: string; videos: ExploreRecommendation[] }>> {
-    const rows = await this.recommendationRepo.find({
-      where: { topic: In(topics), targetLanguage },
-      order: { viewCount: 'DESC' },
-    });
-
-    const grouped = new Map<string, ExploreRecommendation[]>();
-    for (const topic of topics) grouped.set(topic, []);
-    for (const row of rows) {
-      grouped.get(row.topic)?.push(row);
+    limit = 20,
+    cursor?: string,
+  ): Promise<{ data: Array<ExploreRecommendation & { topic: string }>; nextCursor: string | null; hasMore: boolean }> {
+    const where: any = { topic: In(topics), targetLanguage };
+    if (cursor) {
+      const cursorRow = await this.recommendationRepo.findOne({ where: { id: cursor } });
+      if (cursorRow) where.createdAt = LessThan(cursorRow.createdAt);
     }
 
-    return topics
-      .map((topic) => ({ topic, videos: grouped.get(topic) ?? [] }))
-      .filter((g) => g.videos.length > 0);
+    const rows = await this.recommendationRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+      take: limit + 1,
+    });
+
+    const hasMore = rows.length > limit;
+    if (hasMore) rows.pop();
+    const nextCursor = hasMore ? rows[rows.length - 1].id : null;
+
+    return { data: rows as Array<ExploreRecommendation & { topic: string }>, nextCursor, hasMore };
   }
 }

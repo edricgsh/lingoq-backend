@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { GetUser } from 'src/decorators/user.decorator';
 import { UserDTO } from 'src/dtos/user.dto';
@@ -14,9 +14,18 @@ export class ExploreController {
   ) {}
 
   @Get('recommendations')
-  async getRecommendations(@GetUser() user: UserDTO) {
+  async getRecommendations(
+    @GetUser() user: UserDTO,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
     const onboarding = await this.onboardingService.getOnboarding(user.userId);
-    if (!onboarding.interestTopics?.length) return [];
-    return this.exploreService.getRecommendations(onboarding.interestTopics, onboarding.targetLanguage);
+    if (!onboarding.interestTopics?.length) return { data: [], nextCursor: null, hasMore: false };
+    return this.exploreService.getRecommendations(
+      onboarding.interestTopics,
+      onboarding.targetLanguage,
+      limit ? +limit : 20,
+      cursor,
+    );
   }
 }
