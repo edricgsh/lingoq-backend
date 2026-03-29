@@ -24,11 +24,21 @@ export class ExploreController {
     @GetUser() user: UserDTO,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
+    @Query('topics') topicsParam?: string,
   ) {
     const onboarding = await this.onboardingService.getOnboarding(user.userId);
     if (!onboarding.interestTopics?.length) return { data: [], nextCursor: null, hasMore: false };
+
+    // If caller passes specific topics, intersect with the user's own topics
+    const requested = topicsParam ? topicsParam.split(',').map((t) => t.trim()).filter(Boolean) : null;
+    const topics = requested
+      ? onboarding.interestTopics.filter((t) => requested.includes(t))
+      : onboarding.interestTopics;
+
+    if (!topics.length) return { data: [], nextCursor: null, hasMore: false };
+
     return this.exploreService.getRecommendations(
-      onboarding.interestTopics,
+      topics,
       onboarding.targetLanguage,
       limit ? +limit : 20,
       cursor ? +cursor : 0,
