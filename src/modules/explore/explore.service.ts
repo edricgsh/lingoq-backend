@@ -8,6 +8,7 @@ import { ClaudeService } from 'src/modules/claude/claude.service';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { LoggerService } from 'src/modules/logger/logger.service';
 import { v4 as uuidv4 } from 'uuid';
+import { isTargetLanguageMatch } from './language-filter.helper';
 
 const QUERY_CACHE_TTL_DAYS = 7;
 const RESULTS_CACHE_TTL_DAYS = 7;
@@ -70,7 +71,7 @@ export class ExploreService {
     query: string,
     apiKey: string,
   ): Promise<void> {
-    const url = `https://api.supadata.ai/v1/youtube/search?query=${encodeURIComponent(query)}&type=video&limit=50&sortBy=relevance&uploadDate=year`;
+    const url = `https://api.supadata.ai/v1/youtube/search?query=${encodeURIComponent(query)}&type=video&limit=20&sortBy=relevance&uploadDate=year`;
     const res = await fetch(url, { headers: { 'x-api-key': apiKey } });
     if (!res.ok) {
       this.logger.warn(`Supadata search failed for query "${query}": ${res.status}`, 'ExploreService');
@@ -89,18 +90,28 @@ export class ExploreService {
       });
       if (existing) continue;
 
+      const title = video.title ?? null;
+      const channelName = video.channel?.name ?? null;
+      if (!isTargetLanguageMatch(targetLanguage, title, channelName)) {
+        this.logger.log(
+          `Skipping video "${videoId}" — title/channel does not match target language "${targetLanguage}"`,
+          'ExploreService',
+        );
+        continue;
+      }
+
       await this.recommendationRepo.save(
         this.recommendationRepo.create({
           id: uuidv4(),
           topic,
           targetLanguage,
           videoId,
-          title: video.title ?? null,
+          title,
           description: video.description ?? null,
           thumbnailUrl: video.thumbnail ?? null,
           viewCount: video.viewCount ?? video.views ?? null,
           uploadDate: video.uploadDate ?? video.publishedAt ?? null,
-          channelName: video.channel?.name ?? null,
+          channelName,
           channelId: video.channel?.id ?? null,
           duration: video.duration ?? null,
         }),

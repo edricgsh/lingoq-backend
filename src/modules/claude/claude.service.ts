@@ -170,7 +170,7 @@ Respond with ONLY a valid JSON object: { "questions": [...] }. No markdown, no e
   }
 
   async generateSearchQueries(topic: string, targetLanguage: string): Promise<string[]> {
-    const prompt = `Generate 4 YouTube search queries for the topic "${topic}" that a native ${targetLanguage} speaker would use. Return ONLY a JSON array of strings, no markdown.`;
+    const prompt = `Generate 3 YouTube search queries for the topic "${topic}" that a native ${targetLanguage} speaker would use. Return ONLY a JSON array of exactly 3 strings, no markdown.`;
     const response = await this.callClaude(prompt);
     const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
     return JSON.parse(cleaned) as string[];
