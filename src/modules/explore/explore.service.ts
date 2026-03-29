@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThan, MoreThan, Repository } from 'typeorm';
+import { In, MoreThan, Repository } from 'typeorm';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
 import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
@@ -113,28 +113,76 @@ export class ExploreService {
     return cached?.subtitlesVtt ?? null;
   }
 
+  private parseUploadDate(raw: string): Date | null {
+    if (!raw) return null;
+    // YYYYMMDD format
+    if (/^\d{8}$/.test(raw)) {
+      const y = raw.slice(0, 4);
+      const m = raw.slice(4, 6);
+      const d = raw.slice(6, 8);
+      const date = new Date(`${y}-${m}-${d}T00:00:00Z`);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  private computeScore(row: ExploreRecommendation): number {
+    // viewScore
+    let viewScore = 0;
+    if (row.viewCount != null) {
+      viewScore = Math.min(1, Math.log10(row.viewCount + 1) / Math.log10(10_000_000));
+    }
+
+    // recencyScore
+    let recencyScore = 0;
+    const refDate = this.parseUploadDate(row.uploadDate ?? '') ?? row.createdAt;
+    const ageMs = Date.now() - refDate.getTime();
+    const THREE_MONTHS_MS = 3 * 30 * 24 * 60 * 60 * 1000;
+    const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+    if (ageMs <= THREE_MONTHS_MS) {
+      recencyScore = 1.0;
+    } else if (ageMs < TWO_YEARS_MS) {
+      recencyScore = 1 - (ageMs - THREE_MONTHS_MS) / (TWO_YEARS_MS - THREE_MONTHS_MS);
+    }
+
+    // durationScore
+    let durationScore = 0.5;
+    if (row.duration != null) {
+      const d = row.duration;
+      if (d < 60 || d > 3600) {
+        durationScore = 0;
+      } else if (d >= 180 && d <= 900) {
+        durationScore = 1.0;
+      } else if (d < 180) {
+        durationScore = (d - 60) / (180 - 60);
+      } else {
+        durationScore = 1 - (d - 900) / (3600 - 900);
+      }
+    }
+
+    return 0.5 * viewScore + 0.3 * recencyScore + 0.2 * durationScore;
+  }
+
   async getRecommendations(
     topics: string[],
     targetLanguage: string,
     limit = 20,
-    cursor?: string,
-  ): Promise<{ data: Array<ExploreRecommendation & { topic: string }>; nextCursor: string | null; hasMore: boolean }> {
-    const where: any = { topic: In(topics), targetLanguage };
-    if (cursor) {
-      const cursorRow = await this.recommendationRepo.findOne({ where: { id: cursor } });
-      if (cursorRow) where.createdAt = LessThan(cursorRow.createdAt);
-    }
-
+    offset = 0,
+  ): Promise<{ data: Array<ExploreRecommendation & { topic: string }>; nextCursor: number | null; hasMore: boolean }> {
     const rows = await this.recommendationRepo.find({
-      where,
+      where: { topic: In(topics), targetLanguage },
       order: { createdAt: 'DESC' },
-      take: limit + 1,
+      take: 200,
     });
 
-    const hasMore = rows.length > limit;
-    if (hasMore) rows.pop();
-    const nextCursor = hasMore ? rows[rows.length - 1].id : null;
+    const filtered = rows.filter((r) => r.viewCount == null || r.viewCount >= 500);
+    filtered.sort((a, b) => this.computeScore(b) - this.computeScore(a));
 
-    return { data: rows as Array<ExploreRecommendation & { topic: string }>, nextCursor, hasMore };
+    const slice = filtered.slice(offset, offset + limit);
+    const hasMore = offset + limit < filtered.length;
+    const nextCursor = hasMore ? offset + limit : null;
+
+    return { data: slice as Array<ExploreRecommendation & { topic: string }>, nextCursor, hasMore };
   }
 }

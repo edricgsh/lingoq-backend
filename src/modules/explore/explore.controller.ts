@@ -31,7 +31,7 @@ export class ExploreController {
       onboarding.interestTopics,
       onboarding.targetLanguage,
       limit ? +limit : 20,
-      cursor,
+      cursor ? +cursor : 0,
     );
   }
 }
