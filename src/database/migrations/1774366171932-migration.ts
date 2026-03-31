@@ -4,6 +4,10 @@ export class Migration1774366171932 implements MigrationInterface {
     name = 'Migration1774366171932'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TYPE "lingoq"."homework_questions_question_type_enum" AS ENUM('comprehension', 'fill_in_blank', 'free_writing', 'multiple_choice')`);
+        await queryRunner.query(`CREATE TYPE "lingoq"."user_onboarding_proficiency_level_enum" AS ENUM('A1', 'A2', 'B1', 'B2', 'C1', 'C2')`);
+        await queryRunner.query(`CREATE TYPE "lingoq"."users_role_enum" AS ENUM('USER', 'ADMIN')`);
+        await queryRunner.query(`CREATE TYPE "lingoq"."video_content_job_status_enum" AS ENUM('pending', 'processing', 'completed', 'failed')`);
         await queryRunner.query(`CREATE TABLE "lingoq"."session_summaries" ("id" character varying(36) NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "video_content_id" character varying NOT NULL, "summary_target_lang" text, "key_phrases" jsonb, CONSTRAINT "PK_09917dcbdcc0af877fc75ac3d23" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE TABLE "lingoq"."homework_questions" ("id" character varying(36) NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "homework_id" character varying NOT NULL, "question_type" "lingoq"."homework_questions_question_type_enum" NOT NULL, "question_text" text NOT NULL, "expected_answer" text, "options" jsonb, "correct_answer" text, "order_index" integer NOT NULL DEFAULT '0', "video_hint_url" text, CONSTRAINT "PK_7169ca8ada57de05a43fc73cd0a" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE TABLE "lingoq"."homework_answers" ("id" character varying(36) NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "submission_id" character varying NOT NULL, "question_id" character varying NOT NULL, "answer_text" text NOT NULL, "is_correct" boolean, "feedback" text, "corrected_text" text, "score" integer, CONSTRAINT "PK_6538c9a3a171e7920406c1ce40f" PRIMARY KEY ("id"))`);
@@ -65,6 +69,10 @@ export class Migration1774366171932 implements MigrationInterface {
         await queryRunner.query(`DROP TABLE "lingoq"."homework_answers"`);
         await queryRunner.query(`DROP TABLE "lingoq"."homework_questions"`);
         await queryRunner.query(`DROP TABLE "lingoq"."session_summaries"`);
+        await queryRunner.query(`DROP TYPE "lingoq"."video_content_job_status_enum"`);
+        await queryRunner.query(`DROP TYPE "lingoq"."users_role_enum"`);
+        await queryRunner.query(`DROP TYPE "lingoq"."user_onboarding_proficiency_level_enum"`);
+        await queryRunner.query(`DROP TYPE "lingoq"."homework_questions_question_type_enum"`);
     }
 
 }
