@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { IsString, IsOptional, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsEmail, MinLength } from 'class-validator';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/shared/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -16,6 +16,19 @@ class TriggerJobDto {
   @IsOptional()
   @IsObject()
   payload: Record<string, any>;
+}
+
+class AdminCreateUserDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(1)
+  name: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
 }
 
 class SendTestEmailDto {
@@ -35,6 +48,11 @@ class SendTestEmailDto {
 @Roles(UserRole.ADMIN)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Post('create-user')
+  async createUser(@Body() dto: AdminCreateUserDto, @GetUser() _user: UserDTO) {
+    return this.adminService.adminCreateUser(dto.name, dto.email, dto.password);
+  }
 
   @Get('job-definitions')
   async getJobDefinitions() {
