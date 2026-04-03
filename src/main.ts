@@ -44,5 +44,7 @@ async function bootstrap() {
   const port = process.env.PORT || 5007;
   await app.listen(port);
   logger.log(`LingoQ backend running on port ${port}`);
+  logger.log(`Environment: ${process.env.NODE_ENV ?? 'development'}`);
+  logger.log(`Started at: ${new Date().toISOString()}`);
 }
 bootstrap();
