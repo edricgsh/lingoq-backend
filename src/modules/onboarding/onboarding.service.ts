@@ -13,6 +13,7 @@ export interface CompleteOnboardingDto {
   proficiencyLevel: ProficiencyLevel;
   learningGoals?: string;
   interestTopics?: string[];
+  hasSeenTour?: boolean;
 }
 
 @Injectable()

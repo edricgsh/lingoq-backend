@@ -31,6 +31,9 @@ export class UserOnboarding extends BaseEntity {
   @Column({ name: 'interest_topics', type: 'jsonb', default: [] })
   interestTopics: string[];
 
+  @Column({ name: 'has_seen_tour', default: false })
+  hasSeenTour: boolean;
+
   @OneToOne(() => User, (user) => user.onboarding)
   @JoinColumn({ name: 'user_id' })
   user: User;
