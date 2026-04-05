@@ -29,6 +29,7 @@ interface JobData {
   nativeLanguage: string;
   targetLanguage: string;
   proficiencyLevel: ProficiencyLevel;
+  customInstructions?: string | null;
 }
 
 // Map full language names (from onboarding) to ISO 639-1 codes used by the lambda
@@ -92,7 +93,7 @@ export class SessionsWorker implements OnModuleInit {
   }
 
   private async processJob(data: JobData) {
-    const { videoContentId, userId, sessionId, youtubeUrl, youtubeVideoId, nativeLanguage, targetLanguage, proficiencyLevel } = data;
+    const { videoContentId, userId, sessionId, youtubeUrl, youtubeVideoId, nativeLanguage, targetLanguage, proficiencyLevel, customInstructions } = data;
 
     // Create the shared ContentVersion for this video+level (pending → processing → completed/failed)
     const contentVersion = this.contentVersionRepository.create({
@@ -100,7 +101,7 @@ export class SessionsWorker implements OnModuleInit {
       videoContentId,
       proficiencyLevel,
       userId: null,
-      customInstructions: null,
+      customInstructions: customInstructions ?? null,
       status: ContentVersionStatus.PROCESSING,
     });
     await this.contentVersionRepository.save(contentVersion);
@@ -109,7 +110,7 @@ export class SessionsWorker implements OnModuleInit {
       // VideoContent.jobStatus tracks subtitle extraction (the shared, non-level-specific work)
       await this.videoContentRepository.update(videoContentId, { jobStatus: JobStatus.PROCESSING });
 
-      const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel };
+      const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel, customInstructions };
 
       // Step 1: Extract subtitles — check cache first
       this.logger.log(`Processing videoContent ${videoContentId}: Checking subtitle cache...`);

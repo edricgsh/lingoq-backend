@@ -9,6 +9,7 @@ export interface LearnerContext {
   nativeLanguage: string;
   targetLanguage: string;
   proficiencyLevel: ProficiencyLevel;
+  customInstructions?: string | null;
 }
 
 export interface VocabResult {
@@ -71,6 +72,7 @@ export class ClaudeService {
   private async callClaude(prompt: string): Promise<string> {
     const client = await this.getClient();
     const response = await client.messages.create({
+      temperature: 0.7,
       model: 'claude-haiku-4-5',
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
@@ -98,8 +100,11 @@ export class ClaudeService {
   async extractVocab(subtitles: string, context: LearnerContext): Promise<VocabResult[]> {
     const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[context.proficiencyLevel];
+    const customBlock = context.customInstructions
+      ? `\nCustom instructions from the learner: ${context.customInstructions}\n`
+      : '';
     const prompt = `You are a language learning assistant. Extract 5-10 vocabulary words from the following ${context.targetLanguage} transcript for a ${context.proficiencyLevel} level learner whose native language is ${context.nativeLanguage}.
-
+${customBlock}
 Difficulty target: Select words at the ${context.proficiencyLevel}–${targetLevel} level — words the learner has likely encountered but would benefit from reinforcing, plus a few words just at the edge of their comfort zone. ${guidance}
 
 For each word, provide:
@@ -121,8 +126,11 @@ Respond with ONLY a valid JSON array of vocab objects. No markdown, no explanati
   async generateSummary(subtitles: string, context: LearnerContext): Promise<SummaryResult> {
     const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[targetLevel];
+    const customBlock = context.customInstructions
+      ? `\nCustom instructions from the learner: ${context.customInstructions}\n`
+      : '';
     const prompt = `You are a language learning assistant. Create a reading summary for a ${context.proficiencyLevel} level learner of ${context.targetLanguage}.
-
+${customBlock}
 Write the summary slightly above their current level (targeting ${targetLevel}) to provide a productive challenge. ${guidance}
 
 Transcript (${context.targetLanguage}):
@@ -143,8 +151,11 @@ Respond with ONLY a valid JSON object. No markdown, no explanation.`;
     const vocabWords = vocab.map(v => v.word).join(', ');
     const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[targetLevel];
+    const customBlock = context.customInstructions
+      ? `\nCustom instructions from the learner: ${context.customInstructions}\n`
+      : '';
     const prompt = `You are a language learning teacher. Create 5 homework questions for a ${context.proficiencyLevel} level learner of ${context.targetLanguage} (native language: ${context.nativeLanguage}).
-
+${customBlock}
 Difficulty target: Questions should be at ${targetLevel} level — slightly above the learner's current ${context.proficiencyLevel} level to provide a productive challenge without being overwhelming. ${guidance}
 
 Key vocabulary: ${vocabWords}

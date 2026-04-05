@@ -99,7 +99,7 @@ export class RegenerateWorker implements OnModuleInit {
       if (!subtitleCache) throw new Error(`No subtitle cache for videoContentId=${videoContentId}`);
 
       const subtitles = subtitleCache.subtitles;
-      const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel };
+      const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel, customInstructions };
 
       // Generate each requested target and save under the new ContentVersion
       let vocabResults: Awaited<ReturnType<ClaudeService['extractVocab']>> | null = null;
