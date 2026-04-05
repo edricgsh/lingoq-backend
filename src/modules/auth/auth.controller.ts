@@ -111,7 +111,21 @@ export class AuthController {
     if ('domain' in opts) clearOpts.domain = (opts as any).domain;
     res.clearCookie('accessToken', clearOpts);
     res.clearCookie('refreshToken', clearOpts);
-    return { message: 'Logged out successfully' };
+
+    const secrets = await this.secretsService.getSecret();
+    const cognitoAuthUrl = secrets.COGNITO_AUTH_URL;
+    const cognitoClientId = secrets.COGNITO_CLIENT_ID;
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5005';
+
+    let cognitoLogoutUrl: string | null = null;
+    if (cognitoAuthUrl && cognitoClientId) {
+      const url = new URL(`${cognitoAuthUrl}/logout`);
+      url.searchParams.set('client_id', cognitoClientId);
+      url.searchParams.set('logout_uri', `${frontendUrl}/login`);
+      cognitoLogoutUrl = url.toString();
+    }
+
+    return { message: 'Logged out successfully', cognitoLogoutUrl };
   }
 
   @Post('forgot-password')
