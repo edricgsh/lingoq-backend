@@ -200,9 +200,21 @@ export class AuthController {
       throw new BadRequestException(err?.response?.data?.error_description || 'Token exchange failed');
     }
 
+    // Decode id_token for email checks (allowlist + provider conflict)
+    const idPayload = jwt.decode(tokenData.id_token) as Record<string, any> | null;
+
+    // Check allowlist for social logins when beta mode is enabled
+    if (idPayload?.email) {
+      try {
+        await this.authService.assertAllowlisted(idPayload.email);
+      } catch (err) {
+        await this.authService.logout(tokenData.access_token).catch(() => null);
+        throw err;
+      }
+    }
+
     // Check for provider conflict: if this Google account's email is already registered via email/password
     try {
-      const idPayload = jwt.decode(tokenData.id_token) as Record<string, any> | null;
       if (idPayload?.email && idPayload?.['cognito:username']) {
         const conflictProvider = await this.authService.checkSocialProviderConflict(
           idPayload.email,

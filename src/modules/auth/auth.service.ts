@@ -92,7 +92,7 @@ export class AuthService {
     this.isBetaMode = this.configService.get<string>('BETA_MODE') === 'true';
   }
 
-  private async assertAllowlisted(email: string): Promise<void> {
+  async assertAllowlisted(email: string): Promise<void> {
     if (!this.isBetaMode) return;
     const entry = await this.allowedEmailRepository.findOne({
       where: { email: email.toLowerCase() },
