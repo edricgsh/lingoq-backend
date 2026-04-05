@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
+  ListUsersCommand,
   SignUpCommand,
   ConfirmSignUpCommand,
   GlobalSignOutCommand,
@@ -103,8 +104,49 @@ export class AuthService {
     }
   }
 
+  /**
+   * Looks up existing Cognito users by email and returns the provider name
+   * if the email is already registered with a different method.
+   * Returns null if no conflict.
+   */
+  private async detectProviderConflict(
+    email: string,
+    currentUsernamePrefix: 'google_' | null,
+  ): Promise<string | null> {
+    const secrets = await this.secretsService.getSecret();
+    const userPoolId = secrets.COGNITO_USERPOOLID;
+    if (!userPoolId) return null;
+
+    const result = await this.cognitoClient.send(
+      new ListUsersCommand({
+        UserPoolId: userPoolId,
+        Filter: `email = "${email.toLowerCase()}"`,
+      }),
+    );
+
+    if (!result.Users || result.Users.length === 0) return null;
+
+    for (const user of result.Users) {
+      const username = user.Username ?? '';
+      if (currentUsernamePrefix === null) {
+        // Caller is trying to use email/password — conflict if a Google user exists
+        if (username.startsWith('google_')) return 'Google';
+      } else {
+        // Caller is trying to use SSO — conflict if a native (email) user exists
+        if (!username.startsWith('google_')) return 'email';
+      }
+    }
+    return null;
+  }
+
   async signUp(dto: SignUpDto) {
     await this.assertAllowlisted(dto.email);
+
+    const conflictProvider = await this.detectProviderConflict(dto.email, null);
+    if (conflictProvider) {
+      throw new ConflictException(`USER_EXISTS_WITH_${conflictProvider.toUpperCase()}`);
+    }
+
     const secrets = await this.secretsService.getSecret();
     try {
       await this.cognitoClient.send(
@@ -151,6 +193,11 @@ export class AuthService {
       };
     } catch (error) {
       if (error instanceof NotAuthorizedException) {
+        // Check if this email belongs to a Google SSO account
+        const conflictProvider = await this.detectProviderConflict(dto.email, null);
+        if (conflictProvider) {
+          throw new UnauthorizedException(`USER_EXISTS_WITH_${conflictProvider.toUpperCase()}`);
+        }
         throw new UnauthorizedException('Invalid email or password');
       }
       if (error instanceof UserNotConfirmedException) {
@@ -266,6 +313,25 @@ export class AuthService {
     } catch (error) {
       throw new BadRequestException(error.message);
     }
+  }
+
+  async checkSocialProviderConflict(email: string, cognitoUsername: string): Promise<string | null> {
+    const secrets = await this.secretsService.getSecret();
+    const userPoolId = secrets.COGNITO_USERPOOLID;
+    if (!userPoolId) return null;
+
+    const result = await this.cognitoClient.send(
+      new ListUsersCommand({
+        UserPoolId: userPoolId,
+        Filter: `email = "${email.toLowerCase()}"`,
+      }),
+    );
+
+    if (!result.Users || result.Users.length === 0) return null;
+
+    const otherUsers = result.Users.filter((u) => u.Username !== cognitoUsername);
+    const hasNativeUser = otherUsers.some((u) => !u.Username?.startsWith('google_'));
+    return hasNativeUser ? 'email' : null;
   }
 
   async syncUser(dto: SyncUserDto): Promise<User> {

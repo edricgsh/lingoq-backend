@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Headers,
@@ -11,6 +12,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import jwt from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Request, Response } from 'express';
@@ -196,6 +198,25 @@ export class AuthController {
       tokenData = response.data;
     } catch (err) {
       throw new BadRequestException(err?.response?.data?.error_description || 'Token exchange failed');
+    }
+
+    // Check for provider conflict: if this Google account's email is already registered via email/password
+    try {
+      const idPayload = jwt.decode(tokenData.id_token) as Record<string, any> | null;
+      if (idPayload?.email && idPayload?.['cognito:username']) {
+        const conflictProvider = await this.authService.checkSocialProviderConflict(
+          idPayload.email,
+          idPayload['cognito:username'],
+        );
+        if (conflictProvider === 'email') {
+          // Sign out from Cognito so the next Google login attempt prompts account selection
+          await this.authService.logout(tokenData.access_token).catch(() => null);
+          throw new ConflictException('USER_EXISTS_WITH_EMAIL');
+        }
+      }
+    } catch (err) {
+      if (err instanceof ConflictException) throw err;
+      // Decode/check errors are non-fatal — proceed with sign-in
     }
 
     const cookieOptions = getCookieOptions(this.isLocal);
