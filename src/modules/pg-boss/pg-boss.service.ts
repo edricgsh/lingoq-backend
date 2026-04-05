@@ -46,8 +46,14 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async registerQueues() {
+    const deadLetterQueues = new Set([PgBossQueueEnum.REGENERATE_CONTENT_DEAD_LETTER]);
     const queues = Object.values(PgBossQueueEnum);
-    for (const queueName of queues) {
+    // Register dead letter queues first so they exist when referenced
+    const ordered = [
+      ...queues.filter((q) => deadLetterQueues.has(q as PgBossQueueEnum)),
+      ...queues.filter((q) => !deadLetterQueues.has(q as PgBossQueueEnum)),
+    ];
+    for (const queueName of ordered) {
       const options = queueName === PgBossQueueEnum.REGENERATE_CONTENT
         ? { deadLetter: PgBossQueueEnum.REGENERATE_CONTENT_DEAD_LETTER }
         : {};
