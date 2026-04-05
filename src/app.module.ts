@@ -23,6 +23,7 @@ import { EmailModule } from 'src/modules/email/email.module';
 import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
 import { AdminModule } from 'src/modules/admin/admin.module';
 import { ExploreModule } from 'src/modules/explore/explore.module';
+import { NotesModule } from 'src/modules/notes/notes.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ExploreModule } from 'src/modules/explore/explore.module';
     FlashcardsModule,
     AdminModule,
     ExploreModule,
+    NotesModule,
   ],
   providers: [
     {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Not, In, Repository } from 'typeorm';
+import { ILike, LessThan, LessThanOrEqual, Not, In, Repository } from 'typeorm';
 import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
 import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
 import { VocabItem } from 'src/entities/vocab-item.entity';
@@ -226,6 +226,50 @@ export class FlashcardsService {
   async getDueCountForUser(userId: string): Promise<number> {
     const { totalDue } = await this.getDueCards(userId);
     return totalDue;
+  }
+
+  async getVocabBrowse(
+    userId: string,
+    limit = 20,
+    cursor?: string,
+    search?: string,
+  ): Promise<{ data: VocabItem[]; nextCursor: string | null; hasMore: boolean }> {
+    // Get all active content version IDs for this user
+    const sessions = await this.sessionRepo
+      .createQueryBuilder('s')
+      .where('s.userId = :userId', { userId })
+      .andWhere('s.active_content_version_id IS NOT NULL')
+      .select('s.activeContentVersionId', 'activeContentVersionId')
+      .getRawMany();
+
+    const contentVersionIds = sessions.map((s) => s.activeContentVersionId).filter(Boolean);
+    if (contentVersionIds.length === 0) {
+      return { data: [], nextCursor: null, hasMore: false };
+    }
+
+    const where: any = { contentVersionId: In(contentVersionIds) };
+    if (search) {
+      where.word = ILike(`%${search}%`);
+    }
+
+    if (cursor) {
+      const cursorItem = await this.vocabRepo.findOne({ where: { id: cursor } });
+      if (cursorItem) {
+        where.createdAt = LessThan(cursorItem.createdAt);
+      }
+    }
+
+    const items = await this.vocabRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+      take: limit + 1,
+    });
+
+    const hasMore = items.length > limit;
+    if (hasMore) items.pop();
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    return { data: items, nextCursor, hasMore };
   }
 
   async getExtraCards(userId: string, limit: number): Promise<{ cards: DueCard[] }> {

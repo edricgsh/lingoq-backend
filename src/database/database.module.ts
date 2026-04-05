@@ -19,6 +19,7 @@ import { VideoContent } from 'src/entities/video-content.entity';
 import { ContentVersion } from 'src/entities/content-version.entity';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
+import { SessionNote } from 'src/entities/session-note.entity';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { ExploreRecommendation } from 'src/entities/explore-recommendation.entit
             ContentVersion,
             ExploreTopicQuery,
             ExploreRecommendation,
+            SessionNote,
           ],
           synchronize: false,
           logging: false,

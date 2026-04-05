@@ -30,6 +30,21 @@ export class FlashcardsController {
     return this.flashcardsService.getStats(user.userId);
   }
 
+  @Get('vocab')
+  async getVocabBrowse(
+    @GetUser() user: UserDTO,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.flashcardsService.getVocabBrowse(
+      user.userId,
+      limit ? Math.min(+limit, 50) : 20,
+      cursor,
+      search,
+    );
+  }
+
   @Get('extra')
   async getExtraCards(@GetUser() user: UserDTO, @Query('limit') limit?: string) {
     return this.flashcardsService.getExtraCards(user.userId, limit ? Math.min(+limit, 50) : 10);
