@@ -399,6 +399,7 @@ export class SessionsService {
       proficiencyLevel: onboarding.proficiencyLevel,
       youtubeUrl: vc.youtubeUrl,
       contentVersionId: contentVersion.id,
+      previousContentVersionId: session.activeContentVersionId ?? undefined,
     };
 
     await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData);

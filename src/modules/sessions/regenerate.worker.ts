@@ -31,6 +31,8 @@ export interface RegenerateJobData {
   youtubeUrl: string;
   // Pre-created ContentVersion ID so the frontend can start polling immediately
   contentVersionId: string;
+  // Previous active version to copy non-regenerated content from
+  previousContentVersionId?: string;
 }
 
 @Injectable()
@@ -74,6 +76,7 @@ export class RegenerateWorker implements OnModuleInit {
       videoContentId, userId, sessionId, targets,
       customInstructions, nativeLanguage, targetLanguage,
       proficiencyLevel, youtubeUrl, contentVersionId,
+      previousContentVersionId,
     } = data;
 
     const isPersonal = !!customInstructions;
@@ -157,6 +160,66 @@ export class RegenerateWorker implements OnModuleInit {
             }),
           ),
         );
+      }
+
+      // Copy forward non-regenerated content from the previous version
+      if (previousContentVersionId) {
+        if (!targets.includes('vocab')) {
+          const oldVocab = await this.vocabRepository.find({ where: { contentVersionId: previousContentVersionId } });
+          if (oldVocab.length > 0) {
+            await this.vocabRepository.save(
+              oldVocab.map(v => this.vocabRepository.create({
+                id: uuidv4(),
+                contentVersionId,
+                word: v.word,
+                partOfSpeech: v.partOfSpeech,
+                definition: v.definition,
+                examples: v.examples,
+              })),
+            );
+            this.logger.log(`RegenerateWorker: copied ${oldVocab.length} vocab items from ${previousContentVersionId}`, 'RegenerateWorker');
+          }
+        }
+
+        if (!targets.includes('summary')) {
+          const oldSummary = await this.summaryRepository.findOne({ where: { contentVersionId: previousContentVersionId } });
+          if (oldSummary) {
+            await this.summaryRepository.save(
+              this.summaryRepository.create({
+                id: uuidv4(),
+                contentVersionId,
+                summaryTargetLang: oldSummary.summaryTargetLang,
+                keyPhrases: oldSummary.keyPhrases,
+              }),
+            );
+            this.logger.log(`RegenerateWorker: copied summary from ${previousContentVersionId}`, 'RegenerateWorker');
+          }
+        }
+
+        if (!targets.includes('homework')) {
+          const oldHomework = await this.homeworkRepository.findOne({
+            where: { contentVersionId: previousContentVersionId },
+            relations: ['questions'],
+          });
+          if (oldHomework) {
+            const newHomework = this.homeworkRepository.create({ id: uuidv4(), contentVersionId });
+            await this.homeworkRepository.save(newHomework);
+            await this.questionRepository.save(
+              oldHomework.questions.map(q => this.questionRepository.create({
+                id: uuidv4(),
+                homeworkId: newHomework.id,
+                questionType: q.questionType,
+                questionText: q.questionText,
+                expectedAnswer: q.expectedAnswer,
+                orderIndex: q.orderIndex,
+                options: q.options,
+                correctAnswer: q.correctAnswer,
+                videoHintUrl: q.videoHintUrl,
+              })),
+            );
+            this.logger.log(`RegenerateWorker: copied homework from ${previousContentVersionId}`, 'RegenerateWorker');
+          }
+        }
       }
 
       // Mark completed and update session's active version
