@@ -24,6 +24,11 @@ export class SessionsController {
     return this.sessionsService.getSessions(user.userId, limit ? parseInt(limit) : 20, cursor, search);
   }
 
+  @Get('by-video/:videoId')
+  async getSessionByVideoId(@GetUser() user: UserDTO, @Param('videoId') videoId: string) {
+    return this.sessionsService.findSessionByVideoId(user.userId, videoId);
+  }
+
   @Get(':id')
   async getSession(@GetUser() user: UserDTO, @Param('id') id: string) {
     return this.sessionsService.getSession(user.userId, id);

@@ -284,6 +284,20 @@ export class SessionsService {
     };
   }
 
+  async findSessionByVideoId(userId: string, youtubeVideoId: string): Promise<SessionResponse | null> {
+    const session = await this.sessionRepository
+      .createQueryBuilder('s')
+      .innerJoinAndSelect('s.videoContent', 'vc')
+      .leftJoinAndSelect('s.activeContentVersion', 'acv')
+      .where('s.userId = :userId AND vc.youtubeVideoId = :youtubeVideoId', { userId, youtubeVideoId })
+      .getOne();
+
+    if (!session) return null;
+
+    const onboarding = await this.onboardingService.getOnboarding(userId);
+    return toSessionResponse(session, onboarding.proficiencyLevel);
+  }
+
   async getSession(userId: string, sessionId: string): Promise<SessionResponse> {
     const session = await this.sessionRepository
       .createQueryBuilder('s')
