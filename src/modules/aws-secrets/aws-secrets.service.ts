@@ -15,8 +15,6 @@ export class SecretData {
   COGNITO_USERPOOLID?: string;
   COGNITO_REGION?: string;
   COGNITO_AUTH_URL?: string;
-  GOOGLE_CLIENT_ID?: string;
-  GOOGLE_CLIENT_SECRET?: string;
   ANTHROPIC_API_KEY?: string;
   SUPADATA_API_KEY?: string;
   SUPABASE_URL?: string;

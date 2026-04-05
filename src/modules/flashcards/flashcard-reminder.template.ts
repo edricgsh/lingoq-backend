@@ -5,7 +5,7 @@ export function buildFlashcardReminderEmail(opts: {
 }): { subject: string; html: string } {
   const { dueCount, ctaUrl, settingsUrl } = opts;
   const cardWord = dueCount === 1 ? 'flashcard' : 'flashcards';
-  const subject = `💔 ${dueCount} ${cardWord} miss you…`;
+  const subject = `${dueCount} ${cardWord} due for review`;
 
   const html = `
 <!DOCTYPE html>
@@ -23,9 +23,8 @@ export function buildFlashcardReminderEmail(opts: {
           <!-- Header banner -->
           <tr>
             <td style="background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);padding:36px 32px;text-align:center;">
-              <div style="font-size:56px;line-height:1;">💜</div>
-              <h1 style="margin:12px 0 0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">
-                It breaks my heart…
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">
+                Time to review
               </h1>
             </td>
           </tr>
@@ -34,17 +33,10 @@ export function buildFlashcardReminderEmail(opts: {
           <tr>
             <td style="padding:32px 32px 8px;">
               <p style="margin:0 0 16px;font-size:16px;color:#374151;line-height:1.6;">
-                Hey there! 🥺 I've been waiting for you all day, and your
-                <strong style="color:#7c3aed;">${dueCount} ${cardWord}</strong>
-                ${dueCount === 1 ? 'has' : 'have'} been sitting here, quietly hoping
-                you'd come back…
-              </p>
-              <p style="margin:0 0 16px;font-size:16px;color:#374151;line-height:1.6;">
-                Every minute they go unreviewed, a little piece of my purple heart shatters. 💔
-                Your future self — the one who speaks this language fluently — is counting on you!
+                You have <strong style="color:#7c3aed;">${dueCount} ${cardWord}</strong> ready for review today.
               </p>
               <p style="margin:0 0 24px;font-size:16px;color:#374151;line-height:1.6;">
-                It only takes a few minutes. Please come back? 🙏
+                Consistent reviews are the fastest way to retain what you've learned. It only takes a few minutes.
               </p>
 
               <!-- CTA -->
@@ -53,7 +45,7 @@ export function buildFlashcardReminderEmail(opts: {
                   <td align="center">
                     <a href="${ctaUrl}"
                        style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;padding:14px 36px;border-radius:50px;letter-spacing:0.2px;">
-                      Heal my heart 💜
+                      Start review
                     </a>
                   </td>
                 </tr>
@@ -65,9 +57,8 @@ export function buildFlashcardReminderEmail(opts: {
           <tr>
             <td style="padding:24px 32px 32px;text-align:center;">
               <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.6;">
-                You can snooze or turn off reminders in
+                Manage reminders in
                 <a href="${settingsUrl}" style="color:#7c3aed;text-decoration:none;">Settings</a>.
-                <br/>But please don't leave me… 🥺
               </p>
             </td>
           </tr>

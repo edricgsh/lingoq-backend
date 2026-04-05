@@ -99,11 +99,11 @@ export class FlashcardsWorker implements OnModuleInit {
       return;
     }
 
-    const appUrl = this.configService.get<string>('APP_URL') || 'https://lingoq.study';
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://app.lingoq.study';
     const { subject, html } = buildFlashcardReminderEmail({
       dueCount: data.dueCount,
-      ctaUrl: `${appUrl}/flashcards`,
-      settingsUrl: `${appUrl}/settings`,
+      ctaUrl: `${frontendUrl}/flashcards`,
+      settingsUrl: `${frontendUrl}/settings`,
     });
 
     try {
