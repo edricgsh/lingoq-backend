@@ -2,7 +2,6 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import {
   CognitoIdentityProviderClient,
   AdminCreateUserCommand,
@@ -15,6 +14,8 @@ import { LoggerService } from 'src/modules/logger/logger.service';
 import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { AuthService } from 'src/modules/auth/auth.service';
+import { EmailService } from 'src/modules/email/email.service';
+import { buildFlashcardReminderEmail } from 'src/modules/flashcards/flashcard-reminder.template';
 import { User } from 'src/entities/user.entity';
 
 export interface JobPayloadField {
@@ -46,9 +47,7 @@ export interface EmailTemplate {
 
 @Injectable()
 export class AdminService {
-  private sesClient: SESClient;
   private cognitoClient: CognitoIdentityProviderClient;
-  private readonly FROM_EMAIL: string;
 
   constructor(
     @InjectRepository(User)
@@ -58,11 +57,10 @@ export class AdminService {
     private readonly configService: ConfigService,
     private readonly secretsService: AwsSecretsService,
     private readonly authService: AuthService,
+    private readonly emailService: EmailService,
   ) {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
-    this.sesClient = new SESClient({ region }); // always use real AWS (never LocalStack)
     this.cognitoClient = new CognitoIdentityProviderClient({ region });
-    this.FROM_EMAIL = this.configService.get<string>('EMAIL_FROM_ADDRESS', 'noreply@dev.lingoq.study');
   }
 
   async adminCreateUser(name: string, email: string, password: string): Promise<{ id: string; email: string; name: string; cognitoId: string }> {
@@ -182,36 +180,17 @@ export class AdminService {
   private async sendFlashcardReminderEmail(
     recipientEmail: string,
     dueCount: number,
-  ): Promise<{ success: boolean; messageId?: string }> {
-    const subject = `You have ${dueCount} flashcard${dueCount !== 1 ? 's' : ''} due today`;
+  ): Promise<{ success: boolean }> {
     const appUrl = this.configService.get<string>('APP_URL') || 'https://lingoq.study';
-    const ctaUrl = `${appUrl}/flashcards`;
+    const { subject, html } = buildFlashcardReminderEmail({
+      dueCount,
+      ctaUrl: `${appUrl}/flashcards`,
+      settingsUrl: `${appUrl}/settings`,
+    });
 
-    const htmlBody = `
-      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-        <h2 style="color: #6d28d9;">Time to review your flashcards!</h2>
-        <p>You have <strong>${dueCount}</strong> flashcard${dueCount !== 1 ? 's' : ''} due for review today.</p>
-        <a href="${ctaUrl}" style="display:inline-block;background:#6d28d9;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:16px;">
-          Review Now
-        </a>
-        <p style="margin-top:24px;color:#9ca3af;font-size:12px;">
-          You can manage your reminder settings at <a href="${appUrl}/settings">${appUrl}/settings</a>.
-        </p>
-      </div>
-    `;
-
-    const result = await this.sesClient.send(
-      new SendEmailCommand({
-        Source: this.FROM_EMAIL,
-        Destination: { ToAddresses: [recipientEmail] },
-        Message: {
-          Subject: { Data: subject, Charset: 'UTF-8' },
-          Body: { Html: { Data: htmlBody, Charset: 'UTF-8' } },
-        },
-      }),
-    );
+    await this.emailService.send({ to: recipientEmail, subject, html });
 
     this.logger.log(`Test flashcard reminder sent to ${recipientEmail}`, 'AdminService');
-    return { success: true, messageId: result.MessageId };
+    return { success: true };
   }
 }
