@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, OneToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { VideoContent } from './video-content.entity';
 import { ProficiencyLevel } from 'src/enums/proficiency-level.enum';
@@ -22,6 +22,7 @@ export class ContentVersion extends BaseEntity {
 
   // null = shared version (benefits all users at same level)
   // set  = personal version (custom instructions, visible only to this user)
+  @Index()
   @Column({ name: 'user_id', nullable: true })
   userId: string | null;
 
