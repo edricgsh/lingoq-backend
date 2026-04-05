@@ -389,14 +389,12 @@ export class SessionsService {
 
     const onboarding = await this.onboardingService.getOnboarding(userId);
     const vc = session.videoContent;
-    const isPersonal = !!dto.customInstructions?.trim();
-
     // Pre-create the ContentVersion so the frontend can poll its status immediately
     const contentVersion = this.contentVersionRepository.create({
       id: uuidv4(),
       videoContentId: vc.id,
       proficiencyLevel: onboarding.proficiencyLevel,
-      userId: isPersonal ? userId : null,
+      userId,
       customInstructions: dto.customInstructions?.trim() ?? null,
       status: ContentVersionStatus.PENDING,
     });
@@ -418,7 +416,7 @@ export class SessionsService {
 
     await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData);
     this.logger.log(
-      `Enqueued regeneration contentVersionId=${contentVersion.id} session=${sessionId} targets=${dto.targets.join(',')} personal=${isPersonal}`,
+      `Enqueued regeneration contentVersionId=${contentVersion.id} session=${sessionId} targets=${dto.targets.join(',')} userId=${userId}`,
       'SessionsService',
     );
 
