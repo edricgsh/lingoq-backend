@@ -19,6 +19,7 @@ import { VocabModule } from 'src/modules/vocab/vocab.module';
 import { HomeworkModule } from 'src/modules/homework/homework.module';
 import { HealthModule } from 'src/modules/health/health.module';
 import { TtsModule } from 'src/modules/tts/tts.module';
+import { EmailModule } from 'src/modules/email/email.module';
 import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
 import { AdminModule } from 'src/modules/admin/admin.module';
 import { ExploreModule } from 'src/modules/explore/explore.module';
@@ -44,6 +45,7 @@ import { ExploreModule } from 'src/modules/explore/explore.module';
     HomeworkModule,
     HealthModule,
     TtsModule,
+    EmailModule,
     FlashcardsModule,
     AdminModule,
     ExploreModule,

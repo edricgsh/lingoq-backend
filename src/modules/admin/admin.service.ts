@@ -62,7 +62,7 @@ export class AdminService {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
     this.sesClient = new SESClient({ region }); // always use real AWS (never LocalStack)
     this.cognitoClient = new CognitoIdentityProviderClient({ region });
-    this.FROM_EMAIL = this.configService.get<string>('SES_FROM_ADDRESS', 'noreply@dev.lingoq.study');
+    this.FROM_EMAIL = this.configService.get<string>('EMAIL_FROM_ADDRESS', 'noreply@dev.lingoq.study');
   }
 
   async adminCreateUser(name: string, email: string, password: string): Promise<{ id: string; email: string; name: string; cognitoId: string }> {
