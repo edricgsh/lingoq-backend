@@ -16,6 +16,7 @@ export class VocabService {
   async getVocabBySession(sessionId: string, userId: string): Promise<VocabItem[]> {
     const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
     if (!session) throw new NotFoundException('Session not found');
-    return this.vocabRepository.find({ where: { videoContentId: session.videoContentId } });
+    if (!session.activeContentVersionId) return [];
+    return this.vocabRepository.find({ where: { contentVersionId: session.activeContentVersionId } });
   }
 }

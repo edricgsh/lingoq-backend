@@ -2,10 +2,12 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VideoContent } from 'src/entities/video-content.entity';
+import { ContentVersion } from 'src/entities/content-version.entity';
 import { VocabItem } from 'src/entities/vocab-item.entity';
 import { SessionSummary } from 'src/entities/session-summary.entity';
 import { Homework } from 'src/entities/homework.entity';
 import { HomeworkQuestion } from 'src/entities/homework-question.entity';
+import { LearningSession } from 'src/entities/learning-session.entity';
 import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
 import { PgBossService } from 'src/modules/pg-boss/pg-boss.service';
 import { SubtitleExtractorService } from 'src/modules/lambda/subtitle-extractor.service';
@@ -14,12 +16,14 @@ import { ClaudeService, LearnerContext } from 'src/modules/claude/claude.service
 import { LoggerService } from 'src/modules/logger/logger.service';
 import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
 import { JobStatus } from 'src/enums/job-status.enum';
+import { ContentVersionStatus } from 'src/enums/content-version-status.enum';
 import { ProficiencyLevel } from 'src/enums/proficiency-level.enum';
 import { v4 as uuidv4 } from 'uuid';
 
 interface JobData {
   videoContentId: string;
   userId: string;
+  sessionId: string;
   youtubeUrl: string;
   youtubeVideoId: string;
   nativeLanguage: string;
@@ -44,8 +48,7 @@ const LANGUAGE_NAME_TO_CODES: Record<string, string[]> = {
 
 function isLanguageMismatch(targetLanguage: string, detectedLanguage: string): boolean {
   const codes = LANGUAGE_NAME_TO_CODES[targetLanguage.toLowerCase()];
-  if (!codes) return false; // unknown language — don't block
-  // Normalise to base code (e.g. 'es-419' → 'es', 'en-US' → 'en')
+  if (!codes) return false;
   const base = detectedLanguage.split('-')[0].toLowerCase();
   return !codes.some(c => c === detectedLanguage || c === base);
 }
@@ -55,6 +58,8 @@ export class SessionsWorker implements OnModuleInit {
   constructor(
     @InjectRepository(VideoContent)
     private readonly videoContentRepository: Repository<VideoContent>,
+    @InjectRepository(ContentVersion)
+    private readonly contentVersionRepository: Repository<ContentVersion>,
     @InjectRepository(VocabItem)
     private readonly vocabRepository: Repository<VocabItem>,
     @InjectRepository(SessionSummary)
@@ -63,6 +68,8 @@ export class SessionsWorker implements OnModuleInit {
     private readonly homeworkRepository: Repository<Homework>,
     @InjectRepository(HomeworkQuestion)
     private readonly questionRepository: Repository<HomeworkQuestion>,
+    @InjectRepository(LearningSession)
+    private readonly sessionRepository: Repository<LearningSession>,
     @InjectRepository(SubtitleCache)
     private readonly subtitleCacheRepo: Repository<SubtitleCache>,
     private readonly pgBossService: PgBossService,
@@ -85,30 +92,33 @@ export class SessionsWorker implements OnModuleInit {
   }
 
   private async processJob(data: JobData) {
-    const { videoContentId, youtubeUrl, youtubeVideoId, nativeLanguage, targetLanguage, proficiencyLevel } = data;
+    const { videoContentId, userId, sessionId, youtubeUrl, youtubeVideoId, nativeLanguage, targetLanguage, proficiencyLevel } = data;
+
+    // Create the shared ContentVersion for this video+level (pending → processing → completed/failed)
+    const contentVersion = this.contentVersionRepository.create({
+      id: uuidv4(),
+      videoContentId,
+      proficiencyLevel,
+      userId: null,
+      customInstructions: null,
+      status: ContentVersionStatus.PROCESSING,
+    });
+    await this.contentVersionRepository.save(contentVersion);
 
     try {
-      // Update status to processing, and clear any partial data from a previous attempt
+      // VideoContent.jobStatus tracks subtitle extraction (the shared, non-level-specific work)
       await this.videoContentRepository.update(videoContentId, { jobStatus: JobStatus.PROCESSING });
-      await this.vocabRepository.delete({ videoContentId });
-      await this.summaryRepository.delete({ videoContentId });
-      const existingHomework = await this.homeworkRepository.findOne({ where: { videoContentId } });
-      if (existingHomework) {
-        await this.questionRepository.delete({ homeworkId: existingHomework.id });
-        await this.homeworkRepository.delete({ videoContentId });
-      }
 
       const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel };
 
-      // Step 1: Extract subtitles (via Supadata or Lambda depending on SUBTITLE_EXTRACTOR_MODE)
-      // Check cache first
-      this.logger.log(`Processing videoContent ${videoContentId}: Checking subtitle cache for videoId=${youtubeVideoId}...`);
+      // Step 1: Extract subtitles — check cache first
+      this.logger.log(`Processing videoContent ${videoContentId}: Checking subtitle cache...`);
       const targetLangCode = LANGUAGE_NAME_TO_CODES[targetLanguage.toLowerCase()]?.[0];
       let lambdaResult: Awaited<ReturnType<SubtitleExtractorService['extractSubtitles']>>;
 
       const cachedEntry = await this.subtitleCacheRepo.findOne({ where: { youtubeVideoId } });
       if (cachedEntry) {
-        this.logger.log(`Cache hit for videoId=${youtubeVideoId}, skipping subtitle extraction`);
+        this.logger.log(`Cache hit for videoId=${youtubeVideoId}`);
         lambdaResult = {
           statusCode: 200,
           subtitles: cachedEntry.subtitles,
@@ -118,7 +128,7 @@ export class SessionsWorker implements OnModuleInit {
           title: cachedEntry.title ?? undefined,
         };
       } else {
-        this.logger.log(`Processing videoContent ${videoContentId}: Extracting subtitles...`);
+        this.logger.log(`Extracting subtitles for videoContent ${videoContentId}...`);
         lambdaResult = await this.subtitleExtractorService.extractSubtitles(youtubeUrl, youtubeVideoId, targetLangCode);
 
         if (lambdaResult.statusCode === 200 && lambdaResult.subtitles) {
@@ -133,7 +143,6 @@ export class SessionsWorker implements OnModuleInit {
               title: lambdaResult.title ?? null,
             }),
           );
-          this.logger.log(`Cached subtitles for videoId=${youtubeVideoId}`);
         }
       }
 
@@ -141,7 +150,6 @@ export class SessionsWorker implements OnModuleInit {
         throw new Error(lambdaResult.errorMessage || 'Failed to extract subtitles');
       }
 
-      // Reject videos whose language doesn't match the user's target language.
       const detectedLanguage = lambdaResult.spokenLanguage || lambdaResult.language;
       if (detectedLanguage && isLanguageMismatch(targetLanguage, detectedLanguage)) {
         throw new Error(
@@ -149,7 +157,7 @@ export class SessionsWorker implements OnModuleInit {
         );
       }
 
-      // Resolve title: prefer extractor result, fall back to YouTube oEmbed (free, no API key)
+      // Resolve title
       let resolvedTitle = lambdaResult.title;
       if (!resolvedTitle) {
         try {
@@ -159,21 +167,19 @@ export class SessionsWorker implements OnModuleInit {
           if (oembedRes.ok) {
             const oembed = (await oembedRes.json()) as { title?: string };
             resolvedTitle = oembed.title;
-            this.logger.log(`Resolved title via oEmbed for videoContent ${videoContentId}: "${resolvedTitle}"`);
           }
         } catch (err) {
-          this.logger.warn(`oEmbed title fetch failed for videoContent ${videoContentId}: ${err.message}`);
+          this.logger.warn(`oEmbed title fetch failed: ${err.message}`);
         }
       }
 
-      // Update title and VTT subtitles on VideoContent
       await this.videoContentRepository.update(videoContentId, {
         title: resolvedTitle,
         subtitlesVtt: lambdaResult.subtitlesVtt ?? null,
       });
 
-      // Step 2: Fetch and upload thumbnail to Supabase
-      this.logger.log(`Processing videoContent ${videoContentId}: Uploading thumbnail...`);
+      // Step 2: Thumbnail
+      this.logger.log(`Uploading thumbnail for videoContent ${videoContentId}...`);
       try {
         const thumbnailCandidates = [
           `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
@@ -182,38 +188,26 @@ export class SessionsWorker implements OnModuleInit {
         let thumbnailBuffer: Buffer | null = null;
         for (const candidateUrl of thumbnailCandidates) {
           const res = await fetch(candidateUrl);
-          if (res.ok) {
-            thumbnailBuffer = Buffer.from(await res.arrayBuffer());
-            break;
-          }
+          if (res.ok) { thumbnailBuffer = Buffer.from(await res.arrayBuffer()); break; }
         }
         if (thumbnailBuffer) {
-          const thumbnailUrl = await this.supabaseService.uploadThumbnail(
-            youtubeVideoId,
-            thumbnailBuffer,
-            'image/jpeg',
-          );
-          if (thumbnailUrl) {
-            await this.videoContentRepository.update(videoContentId, { thumbnailUrl });
-            this.logger.log(`Thumbnail uploaded successfully for videoContent ${videoContentId}: ${thumbnailUrl}`);
-          } else {
-            this.logger.warn(`uploadThumbnail returned no URL for videoContent ${videoContentId}`);
-          }
-        } else {
-          this.logger.warn(`No thumbnail buffer found for videoContent ${videoContentId} (youtubeVideoId=${youtubeVideoId})`);
+          const thumbnailUrl = await this.supabaseService.uploadThumbnail(youtubeVideoId, thumbnailBuffer, 'image/jpeg');
+          if (thumbnailUrl) await this.videoContentRepository.update(videoContentId, { thumbnailUrl });
         }
       } catch (err) {
-        this.logger.warn(`Failed to upload thumbnail for videoContent ${videoContentId}: ${err.message}`);
+        this.logger.warn(`Thumbnail upload failed: ${err.message}`);
       }
 
-      // Step 3: Extract vocab via Claude
-      this.logger.log(`Processing videoContent ${videoContentId}: Extracting vocabulary...`);
-      const vocabResults = await this.claudeService.extractVocab(lambdaResult.subtitles, context);
+      // VideoContent extraction is done — mark completed
+      await this.videoContentRepository.update(videoContentId, { jobStatus: JobStatus.COMPLETED });
 
+      // Step 3: Generate content via Claude (tracked on ContentVersion)
+      this.logger.log(`Generating vocab for contentVersion ${contentVersion.id}...`);
+      const vocabResults = await this.claudeService.extractVocab(lambdaResult.subtitles, context);
       const vocabItems = vocabResults.map(v =>
         this.vocabRepository.create({
           id: uuidv4(),
-          videoContentId,
+          contentVersionId: contentVersion.id,
           word: v.word,
           partOfSpeech: v.partOfSpeech,
           definition: v.definition,
@@ -222,55 +216,55 @@ export class SessionsWorker implements OnModuleInit {
       );
       await this.vocabRepository.save(vocabItems);
 
-      // Step 4: Generate summary via Claude
-      this.logger.log(`Processing videoContent ${videoContentId}: Generating summary...`);
+      this.logger.log(`Generating summary for contentVersion ${contentVersion.id}...`);
       const summaryResult = await this.claudeService.generateSummary(lambdaResult.subtitles, context);
-
-      const summary = this.summaryRepository.create({
-        id: uuidv4(),
-        videoContentId,
-        summaryTargetLang: summaryResult.summaryTargetLang,
-        keyPhrases: summaryResult.keyPhrases,
-      });
-      await this.summaryRepository.save(summary);
-
-      // Step 5: Generate homework via Claude
-      this.logger.log(`Processing videoContent ${videoContentId}: Generating homework...`);
-      const homeworkResult = await this.claudeService.generateHomework(
-        lambdaResult.subtitles,
-        vocabResults,
-        context,
-        youtubeUrl,
-      );
-
-      const homework = this.homeworkRepository.create({
-        id: uuidv4(),
-        videoContentId,
-      });
-      await this.homeworkRepository.save(homework);
-
-      const questions = homeworkResult.questions.map(q =>
-        this.questionRepository.create({
+      await this.summaryRepository.save(
+        this.summaryRepository.create({
           id: uuidv4(),
-          homeworkId: homework.id,
-          questionType: q.questionType,
-          questionText: q.questionText,
-          expectedAnswer: q.expectedAnswer,
-          orderIndex: q.orderIndex,
-          options: q.options ?? null,
-          correctAnswer: q.correctAnswer ?? null,
-          videoHintUrl: q.videoHintUrl ?? null,
+          contentVersionId: contentVersion.id,
+          summaryTargetLang: summaryResult.summaryTargetLang,
+          keyPhrases: summaryResult.keyPhrases,
         }),
       );
-      await this.questionRepository.save(questions);
 
-      // Step 6: Mark as completed
-      await this.videoContentRepository.update(videoContentId, { jobStatus: JobStatus.COMPLETED });
-      this.logger.log(`VideoContent ${videoContentId} processing completed successfully`);
+      this.logger.log(`Generating homework for contentVersion ${contentVersion.id}...`);
+      const homeworkResult = await this.claudeService.generateHomework(
+        lambdaResult.subtitles, vocabResults, context, youtubeUrl,
+      );
+      const homework = this.homeworkRepository.create({
+        id: uuidv4(),
+        contentVersionId: contentVersion.id,
+      });
+      await this.homeworkRepository.save(homework);
+      await this.questionRepository.save(
+        homeworkResult.questions.map(q =>
+          this.questionRepository.create({
+            id: uuidv4(),
+            homeworkId: homework.id,
+            questionType: q.questionType,
+            questionText: q.questionText,
+            expectedAnswer: q.expectedAnswer,
+            orderIndex: q.orderIndex,
+            options: q.options ?? null,
+            correctAnswer: q.correctAnswer ?? null,
+            videoHintUrl: q.videoHintUrl ?? null,
+          }),
+        ),
+      );
+
+      // Mark ContentVersion completed and point session at it
+      await this.contentVersionRepository.update(contentVersion.id, { status: ContentVersionStatus.COMPLETED });
+      await this.sessionRepository.update(sessionId, { activeContentVersionId: contentVersion.id });
+
+      this.logger.log(`ContentVersion ${contentVersion.id} completed for session ${sessionId}`);
     } catch (error) {
-      this.logger.error(`VideoContent ${videoContentId} processing failed: ${error.message}`, error.stack);
+      this.logger.error(`Processing failed for videoContent ${videoContentId}: ${error.message}`, error.stack);
       await this.videoContentRepository.update(videoContentId, {
         jobStatus: JobStatus.FAILED,
+        errorMessage: error.message,
+      });
+      await this.contentVersionRepository.update(contentVersion.id, {
+        status: ContentVersionStatus.FAILED,
         errorMessage: error.message,
       });
     }

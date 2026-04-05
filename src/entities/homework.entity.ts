@@ -1,17 +1,17 @@
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import { Column, Entity, JoinColumn, OneToMany, OneToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { VideoContent } from './video-content.entity';
+import { ContentVersion } from './content-version.entity';
 import { HomeworkQuestion } from './homework-question.entity';
 import { HomeworkSubmission } from './homework-submission.entity';
 
 @Entity({ name: 'homework', schema: 'lingoq' })
 export class Homework extends BaseEntity {
-  @Column({ name: 'video_content_id' })
-  videoContentId: string;
+  @Column({ name: 'content_version_id' })
+  contentVersionId: string;
 
-  @ManyToOne(() => VideoContent, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'video_content_id' })
-  videoContent: VideoContent;
+  @OneToOne(() => ContentVersion, (cv) => cv.homework, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'content_version_id' })
+  contentVersion: ContentVersion;
 
   @OneToMany(() => HomeworkQuestion, (question) => question.homework, { cascade: true })
   questions: HomeworkQuestion[];

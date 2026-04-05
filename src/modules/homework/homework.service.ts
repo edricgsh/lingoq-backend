@@ -33,13 +33,16 @@ export class HomeworkService {
   ) {}
 
   private async resolveSessionAndHomework(sessionId: string, userId: string): Promise<{ session: LearningSession; homework: Homework }> {
-    const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, userId },
+      relations: ['activeContentVersion'],
+    });
     if (!session) throw new NotFoundException('Session not found');
+    if (!session.activeContentVersionId) throw new NotFoundException('Session content is still processing');
 
     const homework = await this.homeworkRepository.findOne({
-      where: { videoContentId: session.videoContentId },
+      where: { contentVersionId: session.activeContentVersionId },
       relations: ['questions'],
-      order: { createdAt: 'DESC' } as any,
     });
     if (!homework) throw new NotFoundException('Homework not found');
 
@@ -95,6 +98,7 @@ export class HomeworkService {
       questionId,
       userId,
       userSessionId: session.id,
+      contentVersionId: session.activeContentVersionId,
       score,
       overallFeedback: feedback,
       submittedAt: new Date(),

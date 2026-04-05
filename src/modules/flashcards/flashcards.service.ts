@@ -9,7 +9,6 @@ import { LoggerService } from 'src/modules/logger/logger.service';
 import { applySm2 } from './sm2.helper';
 import { UpdateFlashcardSettingsDto } from './dto/update-flashcard-settings.dto';
 import { v4 as uuidv4 } from 'uuid';
-import { JobStatus } from 'src/enums/job-status.enum';
 
 export interface DueCard {
   vocabItemId: string;
@@ -103,20 +102,21 @@ export class FlashcardsService {
       });
       const seenVocabIds = existingProgressIds.map((p) => p.vocabItemId);
 
-      // Get videoContentIds for completed sessions belonging to this user
+      // Get activeContentVersionIds for sessions belonging to this user (with completed content)
       const sessions = await this.sessionRepo
         .createQueryBuilder('s')
-        .innerJoin('s.videoContent', 'vc')
         .where('s.userId = :userId', { userId })
-        .andWhere('vc.jobStatus = :status', { status: JobStatus.COMPLETED })
-        .select('s.videoContentId', 'videoContentId')
+        .andWhere('s.active_content_version_id IS NOT NULL')
+        .select('s.activeContentVersionId', 'activeContentVersionId')
         .orderBy('s.createdAt', 'DESC')
         .getRawMany();
 
-      const videoContentIds = sessions.map((s) => s.videoContentId);
+      const contentVersionIds = sessions
+        .map((s) => s.activeContentVersionId)
+        .filter(Boolean);
 
-      if (videoContentIds.length > 0) {
-        const whereClause: any = { videoContentId: In(videoContentIds) };
+      if (contentVersionIds.length > 0) {
+        const whereClause: any = { contentVersionId: In(contentVersionIds) };
         if (seenVocabIds.length > 0) {
           whereClause.id = Not(In(seenVocabIds));
         }

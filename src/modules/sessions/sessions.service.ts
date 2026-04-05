@@ -3,22 +3,45 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { LearningSession } from 'src/entities/learning-session.entity';
 import { VideoContent } from 'src/entities/video-content.entity';
+import { ContentVersion } from 'src/entities/content-version.entity';
+import { VocabItem } from 'src/entities/vocab-item.entity';
 import { SessionSummary } from 'src/entities/session-summary.entity';
 import { Homework } from 'src/entities/homework.entity';
-import { VocabItem } from 'src/entities/vocab-item.entity';
 import { HomeworkSubmission } from 'src/entities/homework-submission.entity';
 import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
 import { JobStatus } from 'src/enums/job-status.enum';
+import { ContentVersionStatus } from 'src/enums/content-version-status.enum';
+import { ProficiencyLevel } from 'src/enums/proficiency-level.enum';
 import { PgBossService } from 'src/modules/pg-boss/pg-boss.service';
 import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
 import { OnboardingService } from 'src/modules/onboarding/onboarding.service';
 import { SupabaseService } from 'src/modules/supabase/supabase.service';
 import { LoggerService } from 'src/modules/logger/logger.service';
+import { RegenerateJobData, RegenerateTarget } from './regenerate.worker';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CreateSessionDto {
   youtubeUrl: string;
   youtubeVideoId: string;
+}
+
+export interface RegenerateContentDto {
+  targets: RegenerateTarget[];
+  customInstructions?: string;
+}
+
+export interface ContentVersionSummary {
+  id: string;
+  proficiencyLevel: ProficiencyLevel | null;
+  userId: string | null;
+  customInstructions: string | null;
+  status: ContentVersionStatus;
+  errorMessage: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  vocabCount: number;
+  hasSummary: boolean;
+  hasHomework: boolean;
 }
 
 export interface SessionResponse {
@@ -32,6 +55,8 @@ export interface SessionResponse {
   subtitlesVtt: string | null;
   jobStatus: JobStatus;
   errorMessage: string | null;
+  activeContentVersion: ContentVersion | null;
+  isOutdated: boolean;
   createdAt: Date;
   updatedAt: Date;
   vocabItems?: VocabItem[];
@@ -39,8 +64,21 @@ export interface SessionResponse {
   homework?: Homework;
 }
 
-function toSessionResponse(session: LearningSession): SessionResponse {
+function toSessionResponse(
+  session: LearningSession,
+  currentProficiencyLevel?: ProficiencyLevel,
+  vocabItems?: VocabItem[],
+  summary?: SessionSummary,
+  homework?: Homework,
+): SessionResponse {
   const vc = session.videoContent;
+  const acv = session.activeContentVersion ?? null;
+
+  const isOutdated =
+    !!currentProficiencyLevel &&
+    !!acv?.proficiencyLevel &&
+    acv.proficiencyLevel !== currentProficiencyLevel;
+
   return {
     id: session.id,
     userId: session.userId,
@@ -52,11 +90,13 @@ function toSessionResponse(session: LearningSession): SessionResponse {
     subtitlesVtt: vc?.subtitlesVtt ?? null,
     jobStatus: vc?.jobStatus ?? JobStatus.PENDING,
     errorMessage: vc?.errorMessage ?? null,
+    activeContentVersion: acv,
+    isOutdated,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    vocabItems: vc?.vocabItems,
-    summary: vc?.summaries?.[0] ?? undefined,
-    homework: vc?.homeworks?.[0] ?? undefined,
+    vocabItems,
+    summary,
+    homework,
   };
 }
 
@@ -67,8 +107,14 @@ export class SessionsService {
     private readonly sessionRepository: Repository<LearningSession>,
     @InjectRepository(VideoContent)
     private readonly videoContentRepository: Repository<VideoContent>,
+    @InjectRepository(ContentVersion)
+    private readonly contentVersionRepository: Repository<ContentVersion>,
     @InjectRepository(VocabItem)
     private readonly vocabRepository: Repository<VocabItem>,
+    @InjectRepository(SessionSummary)
+    private readonly summaryRepository: Repository<SessionSummary>,
+    @InjectRepository(Homework)
+    private readonly homeworkRepository: Repository<Homework>,
     @InjectRepository(HomeworkSubmission)
     private readonly submissionRepository: Repository<HomeworkSubmission>,
     @InjectRepository(FlashcardProgress)
@@ -86,6 +132,7 @@ export class SessionsService {
     const existingSession = await this.sessionRepository
       .createQueryBuilder('s')
       .innerJoinAndSelect('s.videoContent', 'vc')
+      .leftJoinAndSelect('s.activeContentVersion', 'acv')
       .where('s.userId = :userId AND vc.youtubeVideoId = :youtubeVideoId', {
         userId,
         youtubeVideoId: dto.youtubeVideoId,
@@ -93,16 +140,23 @@ export class SessionsService {
       .getOne();
     if (existingSession) {
       this.logger.log(`Returning existing session ${existingSession.id} for videoId=${dto.youtubeVideoId}`, 'SessionsService');
-      return toSessionResponse(existingSession);
+      return toSessionResponse(existingSession, onboarding.proficiencyLevel);
     }
 
-    // Check if VideoContent already exists for this video
+    // Check if VideoContent already exists
     let videoContent = await this.videoContentRepository.findOne({
       where: { youtubeVideoId: dto.youtubeVideoId },
     });
 
+    // Create session first so we have a sessionId for the job
+    const session = this.sessionRepository.create({
+      id: uuidv4(),
+      userId,
+      videoContentId: null as any, // will be set below
+      activeContentVersionId: null,
+    });
+
     if (!videoContent) {
-      // Create new VideoContent and enqueue processing job
       videoContent = this.videoContentRepository.create({
         id: uuidv4(),
         youtubeVideoId: dto.youtubeVideoId,
@@ -111,51 +165,89 @@ export class SessionsService {
       });
       await this.videoContentRepository.save(videoContent);
 
-      const jobId = await this.pgBossService.send(
-        PgBossQueueEnum.PROCESS_YOUTUBE_URL,
-        {
-          videoContentId: videoContent.id,
-          userId,
-          youtubeUrl: dto.youtubeUrl,
-          youtubeVideoId: dto.youtubeVideoId,
-          nativeLanguage: onboarding.nativeLanguage,
-          targetLanguage: onboarding.targetLanguage,
-          proficiencyLevel: onboarding.proficiencyLevel,
-        },
-      );
+      session.videoContentId = videoContent.id;
+      await this.sessionRepository.save(session);
+
+      const jobId = await this.pgBossService.send(PgBossQueueEnum.PROCESS_YOUTUBE_URL, {
+        videoContentId: videoContent.id,
+        userId,
+        sessionId: session.id,
+        youtubeUrl: dto.youtubeUrl,
+        youtubeVideoId: dto.youtubeVideoId,
+        nativeLanguage: onboarding.nativeLanguage,
+        targetLanguage: onboarding.targetLanguage,
+        proficiencyLevel: onboarding.proficiencyLevel,
+      });
       await this.videoContentRepository.update(videoContent.id, { pgBossJobId: jobId });
       videoContent.pgBossJobId = jobId;
     } else if (videoContent.jobStatus === JobStatus.FAILED) {
-      // Re-enqueue failed video for this new user
       await this.videoContentRepository.update(videoContent.id, {
         jobStatus: JobStatus.PENDING,
         errorMessage: null,
       });
-      const jobId = await this.pgBossService.send(
-        PgBossQueueEnum.PROCESS_YOUTUBE_URL,
-        {
+
+      session.videoContentId = videoContent.id;
+      await this.sessionRepository.save(session);
+
+      const jobId = await this.pgBossService.send(PgBossQueueEnum.PROCESS_YOUTUBE_URL, {
+        videoContentId: videoContent.id,
+        userId,
+        sessionId: session.id,
+        youtubeUrl: videoContent.youtubeUrl,
+        youtubeVideoId: videoContent.youtubeVideoId,
+        nativeLanguage: onboarding.nativeLanguage,
+        targetLanguage: onboarding.targetLanguage,
+        proficiencyLevel: onboarding.proficiencyLevel,
+      });
+      await this.videoContentRepository.update(videoContent.id, { pgBossJobId: jobId });
+    } else {
+      // VideoContent exists and is completed — check if a shared ContentVersion exists for this level
+      session.videoContentId = videoContent.id;
+      await this.sessionRepository.save(session);
+
+      const existingVersion = await this.contentVersionRepository.findOne({
+        where: {
+          videoContentId: videoContent.id,
+          proficiencyLevel: onboarding.proficiencyLevel,
+          userId: null,
+          status: ContentVersionStatus.COMPLETED,
+        },
+      });
+
+      if (existingVersion) {
+        // Reuse the existing shared version
+        await this.sessionRepository.update(session.id, { activeContentVersionId: existingVersion.id });
+        session.activeContentVersionId = existingVersion.id;
+        session.activeContentVersion = existingVersion;
+      } else {
+        // Need to generate content at this user's level — enqueue a regeneration job
+        const contentVersion = this.contentVersionRepository.create({
+          id: uuidv4(),
+          videoContentId: videoContent.id,
+          proficiencyLevel: onboarding.proficiencyLevel,
+          userId: null,
+          customInstructions: null,
+          status: ContentVersionStatus.PENDING,
+        });
+        await this.contentVersionRepository.save(contentVersion);
+
+        const jobData: RegenerateJobData = {
           videoContentId: videoContent.id,
           userId,
-          youtubeUrl: videoContent.youtubeUrl,
-          youtubeVideoId: videoContent.youtubeVideoId,
+          sessionId: session.id,
+          targets: ['vocab', 'summary', 'homework'],
           nativeLanguage: onboarding.nativeLanguage,
           targetLanguage: onboarding.targetLanguage,
           proficiencyLevel: onboarding.proficiencyLevel,
-        },
-      );
-      await this.videoContentRepository.update(videoContent.id, { pgBossJobId: jobId });
+          youtubeUrl: videoContent.youtubeUrl,
+          contentVersionId: contentVersion.id,
+        };
+        await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData);
+      }
     }
 
-    // Create LearningSession linking user ↔ video
-    const session = this.sessionRepository.create({
-      id: uuidv4(),
-      userId,
-      videoContentId: videoContent.id,
-    });
-    await this.sessionRepository.save(session);
     session.videoContent = videoContent;
-
-    return toSessionResponse(session);
+    return toSessionResponse(session, onboarding.proficiencyLevel);
   }
 
   async getSessions(
@@ -167,58 +259,170 @@ export class SessionsService {
     const qb = this.sessionRepository
       .createQueryBuilder('s')
       .innerJoinAndSelect('s.videoContent', 'vc')
+      .leftJoinAndSelect('s.activeContentVersion', 'acv')
       .where('s.userId = :userId', { userId })
       .orderBy('s.createdAt', 'DESC')
       .take(limit + 1);
 
-    if (search) {
-      qb.andWhere('vc.title ILIKE :search', { search: `%${search}%` });
-    }
+    if (search) qb.andWhere('vc.title ILIKE :search', { search: `%${search}%` });
 
     if (cursor) {
       const cursorSession = await this.sessionRepository.findOne({ where: { id: cursor, userId } });
-      if (cursorSession) {
-        qb.andWhere('s.createdAt < :createdAt', { createdAt: cursorSession.createdAt });
-      }
+      if (cursorSession) qb.andWhere('s.createdAt < :createdAt', { createdAt: cursorSession.createdAt });
     }
 
     const sessions = await qb.getMany();
-
     const hasMore = sessions.length > limit;
     if (hasMore) sessions.pop();
 
-    const nextCursor = hasMore && sessions.length > 0 ? sessions[sessions.length - 1].id : null;
+    const onboarding = await this.onboardingService.getOnboarding(userId);
 
-    return { data: sessions.map(toSessionResponse), nextCursor, hasMore };
+    return {
+      data: sessions.map(s => toSessionResponse(s, onboarding.proficiencyLevel)),
+      nextCursor: hasMore && sessions.length > 0 ? sessions[sessions.length - 1].id : null,
+      hasMore,
+    };
   }
 
   async getSession(userId: string, sessionId: string): Promise<SessionResponse> {
     const session = await this.sessionRepository
       .createQueryBuilder('s')
       .innerJoinAndSelect('s.videoContent', 'vc')
-      .leftJoinAndSelect('vc.vocabItems', 'vi')
-      .leftJoinAndSelect('vc.summaries', 'sum')
-      .leftJoinAndSelect('vc.homeworks', 'hw')
-      .leftJoinAndSelect('hw.questions', 'q')
+      .leftJoinAndSelect('s.activeContentVersion', 'acv')
       .where('s.id = :sessionId AND s.userId = :userId', { sessionId, userId })
-      .orderBy('sum.createdAt', 'DESC')
-      .addOrderBy('hw.createdAt', 'DESC')
       .getOne();
 
     if (!session) throw new NotFoundException('Session not found');
-    return toSessionResponse(session);
+
+    const onboarding = await this.onboardingService.getOnboarding(userId);
+    const acv = session.activeContentVersion;
+
+    let vocabItems: VocabItem[] | undefined;
+    let summary: SessionSummary | undefined;
+    let homework: Homework | undefined;
+
+    if (acv?.status === ContentVersionStatus.COMPLETED) {
+      [vocabItems, summary, homework] = await Promise.all([
+        this.vocabRepository.find({ where: { contentVersionId: acv.id } }),
+        this.summaryRepository.findOne({ where: { contentVersionId: acv.id } }),
+        this.homeworkRepository.findOne({
+          where: { contentVersionId: acv.id },
+          relations: ['questions'],
+        }),
+      ]);
+    }
+
+    return toSessionResponse(session, onboarding.proficiencyLevel, vocabItems, summary ?? undefined, homework ?? undefined);
   }
 
-  async getSessionStatus(userId: string, sessionId: string): Promise<{ jobStatus: JobStatus; errorMessage?: string }> {
+  async getSessionStatus(userId: string, sessionId: string): Promise<{ jobStatus: JobStatus; errorMessage?: string; activeContentVersion?: { id: string; status: ContentVersionStatus } }> {
     const session = await this.sessionRepository.findOne({
       where: { id: sessionId, userId },
-      relations: ['videoContent'],
+      relations: ['videoContent', 'activeContentVersion'],
     });
     if (!session) throw new NotFoundException('Session not found');
     return {
       jobStatus: session.videoContent.jobStatus,
       errorMessage: session.videoContent.errorMessage,
+      activeContentVersion: session.activeContentVersion
+        ? { id: session.activeContentVersion.id, status: session.activeContentVersion.status }
+        : undefined,
     };
+  }
+
+  async getContentVersions(userId: string, sessionId: string): Promise<ContentVersionSummary[]> {
+    const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
+    if (!session) throw new NotFoundException('Session not found');
+
+    // Return all versions for this video that are either shared OR belong to this user
+    const versions = await this.contentVersionRepository
+      .createQueryBuilder('cv')
+      .where('cv.video_content_id = :videoContentId', { videoContentId: session.videoContentId })
+      .andWhere('(cv.user_id IS NULL OR cv.user_id = :userId)', { userId })
+      .orderBy('cv.created_at', 'DESC')
+      .getMany();
+
+    return Promise.all(
+      versions.map(async (cv) => {
+        const [vocabCount, summary, homework] = await Promise.all([
+          this.vocabRepository.count({ where: { contentVersionId: cv.id } }),
+          this.summaryRepository.findOne({ where: { contentVersionId: cv.id }, select: ['id'] }),
+          this.homeworkRepository.findOne({ where: { contentVersionId: cv.id }, select: ['id'] }),
+        ]);
+        return {
+          id: cv.id,
+          proficiencyLevel: cv.proficiencyLevel,
+          userId: cv.userId,
+          customInstructions: cv.customInstructions,
+          status: cv.status,
+          errorMessage: cv.errorMessage,
+          isActive: session.activeContentVersionId === cv.id,
+          createdAt: cv.createdAt,
+          vocabCount,
+          hasSummary: !!summary,
+          hasHomework: !!homework,
+        };
+      }),
+    );
+  }
+
+  async regenerateContent(userId: string, sessionId: string, dto: RegenerateContentDto): Promise<{ contentVersionId: string }> {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId, userId },
+      relations: ['videoContent', 'activeContentVersion'],
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    const onboarding = await this.onboardingService.getOnboarding(userId);
+    const vc = session.videoContent;
+    const isPersonal = !!dto.customInstructions?.trim();
+
+    // Pre-create the ContentVersion so the frontend can poll its status immediately
+    const contentVersion = this.contentVersionRepository.create({
+      id: uuidv4(),
+      videoContentId: vc.id,
+      proficiencyLevel: onboarding.proficiencyLevel,
+      userId: isPersonal ? userId : null,
+      customInstructions: dto.customInstructions?.trim() ?? null,
+      status: ContentVersionStatus.PENDING,
+    });
+    await this.contentVersionRepository.save(contentVersion);
+
+    const jobData: RegenerateJobData = {
+      videoContentId: vc.id,
+      userId,
+      sessionId,
+      targets: dto.targets,
+      customInstructions: dto.customInstructions?.trim(),
+      nativeLanguage: onboarding.nativeLanguage,
+      targetLanguage: onboarding.targetLanguage,
+      proficiencyLevel: onboarding.proficiencyLevel,
+      youtubeUrl: vc.youtubeUrl,
+      contentVersionId: contentVersion.id,
+    };
+
+    await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData);
+    this.logger.log(
+      `Enqueued regeneration contentVersionId=${contentVersion.id} session=${sessionId} targets=${dto.targets.join(',')} personal=${isPersonal}`,
+      'SessionsService',
+    );
+
+    return { contentVersionId: contentVersion.id };
+  }
+
+  async activateContentVersion(userId: string, sessionId: string, contentVersionId: string): Promise<void> {
+    const session = await this.sessionRepository.findOne({ where: { id: sessionId, userId } });
+    if (!session) throw new NotFoundException('Session not found');
+
+    // Verify this version belongs to this session's video and is accessible to this user
+    const version = await this.contentVersionRepository.findOne({
+      where: { id: contentVersionId, videoContentId: session.videoContentId },
+    });
+    if (!version) throw new NotFoundException('Content version not found');
+    if (version.userId !== null && version.userId !== userId) throw new NotFoundException('Content version not found');
+    if (version.status !== ContentVersionStatus.COMPLETED) throw new NotFoundException('Content version is not completed');
+
+    await this.sessionRepository.update(sessionId, { activeContentVersionId: contentVersionId });
   }
 
   async deleteSession(userId: string, sessionId: string): Promise<void> {
@@ -228,20 +432,30 @@ export class SessionsService {
     });
     if (!session) throw new NotFoundException('Session not found');
 
-    // Delete homework submissions for this user session (cascade deletes answers)
     await this.submissionRepository.delete({ userSessionId: sessionId });
 
-    // Delete flashcard progress for vocab items belonging to this video
-    const vocabItems = await this.vocabRepository.find({
-      where: { videoContentId: session.videoContentId },
-      select: ['id'],
-    });
-    if (vocabItems.length > 0) {
-      const vocabIds = vocabItems.map(v => v.id);
-      await this.flashcardProgressRepository.delete({ userId, vocabItemId: In(vocabIds) });
+    const allVocabItems = await this.vocabRepository
+      .createQueryBuilder('vi')
+      .innerJoin('vi.contentVersion', 'cv')
+      .where('cv.video_content_id = :videoContentId', { videoContentId: session.videoContentId })
+      .getMany();
+
+    if (allVocabItems.length > 0) {
+      await this.flashcardProgressRepository.delete({
+        userId,
+        vocabItemId: In(allVocabItems.map(v => v.id)),
+      });
     }
 
-    // Delete just the user's session row — VideoContent and content remain
+    // Delete personal ContentVersions for this user+video (shared versions remain)
+    const personalVersions = await this.contentVersionRepository.find({
+      where: { videoContentId: session.videoContentId, userId },
+    });
+    for (const cv of personalVersions) {
+      // Cascade deletes vocab/summary/homework under this version
+      await this.contentVersionRepository.delete({ id: cv.id });
+    }
+
     await this.sessionRepository.remove(session);
   }
 
@@ -255,23 +469,18 @@ export class SessionsService {
     const onboarding = await this.onboardingService.getOnboarding(userId);
     const vc = session.videoContent;
 
-    await this.videoContentRepository.update(vc.id, {
-      jobStatus: JobStatus.PENDING,
-      errorMessage: null,
-    });
+    await this.videoContentRepository.update(vc.id, { jobStatus: JobStatus.PENDING, errorMessage: null });
 
-    const jobId = await this.pgBossService.send(
-      PgBossQueueEnum.PROCESS_YOUTUBE_URL,
-      {
-        videoContentId: vc.id,
-        userId,
-        youtubeUrl: vc.youtubeUrl,
-        youtubeVideoId: vc.youtubeVideoId,
-        nativeLanguage: onboarding.nativeLanguage,
-        targetLanguage: onboarding.targetLanguage,
-        proficiencyLevel: onboarding.proficiencyLevel,
-      },
-    );
+    const jobId = await this.pgBossService.send(PgBossQueueEnum.PROCESS_YOUTUBE_URL, {
+      videoContentId: vc.id,
+      userId,
+      sessionId,
+      youtubeUrl: vc.youtubeUrl,
+      youtubeVideoId: vc.youtubeVideoId,
+      nativeLanguage: onboarding.nativeLanguage,
+      targetLanguage: onboarding.targetLanguage,
+      proficiencyLevel: onboarding.proficiencyLevel,
+    });
 
     await this.videoContentRepository.update(vc.id, { pgBossJobId: jobId });
   }
@@ -290,7 +499,6 @@ export class SessionsService {
     });
     if (!session) throw new NotFoundException('Session not found');
     if (session.videoContent.thumbnailUrl) return;
-
     this.doFetchThumbnail(session.videoContentId, session.videoContent.youtubeVideoId).catch(() => {});
   }
 
@@ -303,20 +511,13 @@ export class SessionsService {
       let buffer: Buffer | null = null;
       for (const url of candidates) {
         const res = await fetch(url);
-        if (res.ok) {
-          buffer = Buffer.from(await res.arrayBuffer());
-          break;
-        }
+        if (res.ok) { buffer = Buffer.from(await res.arrayBuffer()); break; }
       }
       if (!buffer) return;
-
       const thumbnailUrl = await this.supabaseService.uploadThumbnail(youtubeVideoId, buffer, 'image/jpeg');
-      if (thumbnailUrl) {
-        await this.videoContentRepository.update(videoContentId, { thumbnailUrl });
-        this.logger.log(`Thumbnail backfilled for videoContent ${videoContentId}`, 'SessionsService');
-      }
+      if (thumbnailUrl) await this.videoContentRepository.update(videoContentId, { thumbnailUrl });
     } catch (err) {
-      this.logger.warn(`Thumbnail backfill failed for videoContent ${videoContentId}: ${err.message}`, 'SessionsService');
+      this.logger.warn(`Thumbnail backfill failed: ${err.message}`, 'SessionsService');
     }
   }
 }

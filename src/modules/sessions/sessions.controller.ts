@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, UseGuards 
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
 import { GetUser } from 'src/decorators/user.decorator';
 import { UserDTO } from 'src/dtos/user.dto';
-import { SessionsService, CreateSessionDto } from './sessions.service';
+import { SessionsService, CreateSessionDto, RegenerateContentDto } from './sessions.service';
 
 @Controller('sessions')
 @UseGuards(JwtAuthGuard)
@@ -21,12 +21,7 @@ export class SessionsController {
     @Query('cursor') cursor?: string,
     @Query('search') search?: string,
   ) {
-    return this.sessionsService.getSessions(
-      user.userId,
-      limit ? parseInt(limit) : 20,
-      cursor,
-      search,
-    );
+    return this.sessionsService.getSessions(user.userId, limit ? parseInt(limit) : 20, cursor, search);
   }
 
   @Get(':id')
@@ -39,10 +34,31 @@ export class SessionsController {
     return this.sessionsService.getSessionStatus(user.userId, id);
   }
 
+  @Get(':id/content-versions')
+  async getContentVersions(@GetUser() user: UserDTO, @Param('id') id: string) {
+    return this.sessionsService.getContentVersions(user.userId, id);
+  }
+
   @Post(':id/retry')
   @HttpCode(204)
   async retrySession(@GetUser() user: UserDTO, @Param('id') id: string) {
     await this.sessionsService.retrySession(user.userId, id);
+  }
+
+  @Post(':id/regenerate')
+  @HttpCode(202)
+  async regenerateContent(@GetUser() user: UserDTO, @Param('id') id: string, @Body() dto: RegenerateContentDto) {
+    return this.sessionsService.regenerateContent(user.userId, id, dto);
+  }
+
+  @Post(':id/content-versions/:versionId/activate')
+  @HttpCode(204)
+  async activateContentVersion(
+    @GetUser() user: UserDTO,
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+  ) {
+    await this.sessionsService.activateContentVersion(user.userId, id, versionId);
   }
 
   @Post(':id/fetch-thumbnail')

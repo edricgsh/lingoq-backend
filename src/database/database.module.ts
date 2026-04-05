@@ -16,6 +16,7 @@ import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
 import { FlashcardSettings } from 'src/entities/flashcard-settings.entity';
 import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
 import { VideoContent } from 'src/entities/video-content.entity';
+import { ContentVersion } from 'src/entities/content-version.entity';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
 
@@ -58,6 +59,7 @@ import { ExploreRecommendation } from 'src/entities/explore-recommendation.entit
             FlashcardSettings,
             SubtitleCache,
             VideoContent,
+            ContentVersion,
             ExploreTopicQuery,
             ExploreRecommendation,
           ],

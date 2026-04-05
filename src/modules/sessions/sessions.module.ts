@@ -9,9 +9,11 @@ import { HomeworkQuestion } from 'src/entities/homework-question.entity';
 import { HomeworkSubmission } from 'src/entities/homework-submission.entity';
 import { FlashcardProgress } from 'src/entities/flashcard-progress.entity';
 import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
+import { ContentVersion } from 'src/entities/content-version.entity';
 import { SessionsController } from './sessions.controller';
 import { SessionsService } from './sessions.service';
 import { SessionsWorker } from './sessions.worker';
+import { RegenerateWorker } from './regenerate.worker';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 
 @Module({
@@ -26,11 +28,12 @@ import { OnboardingModule } from '../onboarding/onboarding.module';
       HomeworkSubmission,
       FlashcardProgress,
       SubtitleCache,
+      ContentVersion,
     ]),
     OnboardingModule,
   ],
   controllers: [SessionsController],
-  providers: [SessionsService, SessionsWorker],
+  providers: [SessionsService, SessionsWorker, RegenerateWorker],
   exports: [SessionsService],
 })
 export class SessionsModule {}
