@@ -69,6 +69,36 @@ export class RegenerateWorker implements OnModuleInit {
       },
       { batchSize: 1 },
     );
+
+    await this.pgBossService.work<RegenerateJobData>(
+      PgBossQueueEnum.REGENERATE_CONTENT_DEAD_LETTER,
+      async (jobs) => {
+        for (const job of jobs) {
+          const { contentVersionId, sessionId, userId, targets, jobId } = { ...job.data, jobId: job.id };
+          this.logger.warn(
+            `[DeadLetter] Received expired job — jobId=${jobId} contentVersionId=${contentVersionId} sessionId=${sessionId} userId=${userId} targets=${targets.join(',')}`,
+            'RegenerateWorker',
+          );
+          try {
+            await this.contentVersionRepository.update(contentVersionId, {
+              status: ContentVersionStatus.FAILED,
+              errorMessage: 'Content generation timed out',
+            });
+            this.logger.warn(
+              `[DeadLetter] Marked contentVersion=${contentVersionId} as FAILED`,
+              'RegenerateWorker',
+            );
+          } catch (err) {
+            this.logger.error(
+              `[DeadLetter] Failed to update contentVersion=${contentVersionId}: ${err.message}`,
+              err.stack,
+              'RegenerateWorker',
+            );
+          }
+        }
+      },
+      { batchSize: 1 },
+    );
   }
 
   private async processJob(data: RegenerateJobData) {
@@ -88,6 +118,16 @@ export class RegenerateWorker implements OnModuleInit {
 
     try {
       await this.contentVersionRepository.update(contentVersionId, { status: ContentVersionStatus.PROCESSING });
+
+      // Delete any partially written data from a previous attempt so retries are idempotent
+      await this.vocabRepository.delete({ contentVersionId });
+      const existingHomework = await this.homeworkRepository.findOne({ where: { contentVersionId } });
+      if (existingHomework) {
+        await this.questionRepository.delete({ homeworkId: existingHomework.id });
+        await this.homeworkRepository.delete({ contentVersionId });
+      }
+      await this.summaryRepository.delete({ contentVersionId });
+      this.logger.log(`RegenerateWorker: cleared previous data for contentVersion=${contentVersionId}`, 'RegenerateWorker');
 
       // Retrieve subtitles from cache
       const videoContent = await this.videoContentRepository.findOne({ where: { id: videoContentId } });
@@ -124,9 +164,11 @@ export class RegenerateWorker implements OnModuleInit {
         this.logger.log(`RegenerateWorker: saved ${items.length} vocab items`, 'RegenerateWorker');
       }
 
+      let summaryResult: Awaited<ReturnType<ClaudeService['generateSummary']>> | null = null;
+
       if (targets.includes('summary')) {
         this.logger.log(`RegenerateWorker: generating summary for contentVersion ${contentVersionId}`, 'RegenerateWorker');
-        const summaryResult = await this.claudeService.generateSummary(subtitles, context);
+        summaryResult = await this.claudeService.generateSummary(subtitles, context);
         await this.summaryRepository.save(
           this.summaryRepository.create({
             id: uuidv4(),
@@ -139,7 +181,17 @@ export class RegenerateWorker implements OnModuleInit {
 
       if (targets.includes('homework') && vocabResults) {
         this.logger.log(`RegenerateWorker: generating homework for contentVersion ${contentVersionId}`, 'RegenerateWorker');
-        const homeworkResult = await this.claudeService.generateHomework(subtitles, vocabResults, context, youtubeUrl);
+        // Use freshly generated summary or fall back to existing one in the DB
+        if (!summaryResult) {
+          const existingSummary = await this.summaryRepository.findOne({ where: { contentVersionId } });
+          if (existingSummary) {
+            summaryResult = { summaryTargetLang: existingSummary.summaryTargetLang, keyPhrases: existingSummary.keyPhrases };
+          } else {
+            this.logger.log(`RegenerateWorker: no existing summary found, generating one for homework context`, 'RegenerateWorker');
+            summaryResult = await this.claudeService.generateSummary(subtitles, context);
+          }
+        }
+        const homeworkResult = await this.claudeService.generateHomework(subtitles, vocabResults, summaryResult, context, youtubeUrl);
         const homework = this.homeworkRepository.create({
           id: uuidv4(),
           contentVersionId,
@@ -231,14 +283,15 @@ export class RegenerateWorker implements OnModuleInit {
         'RegenerateWorker',
       );
     } catch (error) {
+      const isTimeout = error.name === 'AbortError' || error.name === 'TimeoutError';
       this.logger.error(
-        `RegenerateWorker: failed contentVersion=${contentVersionId}: ${error.message}`,
+        `RegenerateWorker: ${isTimeout ? '[TIMEOUT]' : '[ERROR]'} contentVersion=${contentVersionId} sessionId=${sessionId}: ${error.name}: ${error.message}`,
         error.stack,
         'RegenerateWorker',
       );
       await this.contentVersionRepository.update(contentVersionId, {
         status: ContentVersionStatus.FAILED,
-        errorMessage: error.message,
+        errorMessage: isTimeout ? 'Content generation timed out' : error.message,
       });
     }
   }

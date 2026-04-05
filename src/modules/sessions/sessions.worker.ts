@@ -230,7 +230,7 @@ export class SessionsWorker implements OnModuleInit {
 
       this.logger.log(`Generating homework for contentVersion ${contentVersion.id}...`);
       const homeworkResult = await this.claudeService.generateHomework(
-        lambdaResult.subtitles, vocabResults, context, youtubeUrl,
+        lambdaResult.subtitles, vocabResults, summaryResult, context, youtubeUrl,
       );
       const homework = this.homeworkRepository.create({
         id: uuidv4(),

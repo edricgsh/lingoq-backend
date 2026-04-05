@@ -71,12 +71,15 @@ export class ClaudeService {
 
   private async callClaude(prompt: string): Promise<string> {
     const client = await this.getClient();
-    const response = await client.messages.create({
-      temperature: 0.7,
-      model: 'claude-haiku-4-5',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        temperature: 0.7,
+        model: 'claude-haiku-4-5',
+        max_tokens: 8192,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { signal: AbortSignal.timeout(110_000) },
+    );
     const content = response.content[0];
     if (content.type !== 'text') throw new Error('Unexpected response type');
     return content.text;
@@ -137,7 +140,7 @@ Transcript (${context.targetLanguage}):
 ${subtitles.substring(0, 8000)}
 
 Provide:
-- summaryTargetLang: A paragraph summary written in ${context.targetLanguage} at ${targetLevel} level. Use vocabulary and grammar that stretch the learner slightly beyond ${context.proficiencyLevel}.
+- summaryTargetLang: A detailed article-style summary written in ${context.targetLanguage} at ${targetLevel} level. It should be at least 4–6 paragraphs long and cover the video's key points, arguments, examples, and conclusions in depth — enough that a reader who has not watched the video can fully understand what was discussed. Use vocabulary and grammar that stretch the learner slightly beyond ${context.proficiencyLevel}.
 - keyPhrases: 5-8 key phrases/expressions from the video that are at or just above ${context.proficiencyLevel} level [{ phrase: in ${context.targetLanguage}, translation: in ${context.nativeLanguage} }]
 
 Respond with ONLY a valid JSON object. No markdown, no explanation.`;
@@ -147,7 +150,7 @@ Respond with ONLY a valid JSON object. No markdown, no explanation.`;
     return JSON.parse(cleaned) as SummaryResult;
   }
 
-  async generateHomework(subtitles: string, vocab: VocabResult[], context: LearnerContext, youtubeUrl: string): Promise<HomeworkResult> {
+  async generateHomework(subtitles: string, vocab: VocabResult[], summary: SummaryResult, context: LearnerContext, youtubeUrl: string): Promise<HomeworkResult> {
     const vocabWords = vocab.map(v => v.word).join(', ');
     const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[targetLevel];
@@ -160,8 +163,15 @@ Difficulty target: Questions should be at ${targetLevel} level — slightly abov
 
 Key vocabulary: ${vocabWords}
 
-Transcript:
-${subtitles.substring(0, 6000)}
+IMPORTANT: Base the questions primarily on the Summary Article below. The learner will have read the summary before attempting homework, so questions should be answerable from the summary without needing to watch the video.
+
+Summary Article (${context.targetLanguage}):
+${summary.summaryTargetLang}
+
+Key phrases covered: ${summary.keyPhrases.map(k => k.phrase).join(', ')}
+
+Transcript (for additional context only):
+${subtitles.substring(0, 4000)}
 
 Create exactly 5 questions, ALL written in ${context.targetLanguage}:
 - 2 multiple choice questions (type: "multiple_choice") — 4 options each. Include "options" array and "correctAnswer" (exact text of correct option).

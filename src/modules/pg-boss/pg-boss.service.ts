@@ -48,7 +48,10 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
   private async registerQueues() {
     const queues = Object.values(PgBossQueueEnum);
     for (const queueName of queues) {
-      await this.boss.createQueue(queueName);
+      const options = queueName === PgBossQueueEnum.REGENERATE_CONTENT
+        ? { deadLetter: PgBossQueueEnum.REGENERATE_CONTENT_DEAD_LETTER }
+        : {};
+      await this.boss.createQueue(queueName, options);
       this.logger.log(`Registered PgBoss queue: ${queueName}`, 'PgBossService');
     }
   }

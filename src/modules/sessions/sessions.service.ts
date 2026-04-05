@@ -242,7 +242,7 @@ export class SessionsService {
           youtubeUrl: videoContent.youtubeUrl,
           contentVersionId: contentVersion.id,
         };
-        await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData);
+        await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData, { expireInSeconds: 120 });
       }
     }
 
@@ -414,7 +414,7 @@ export class SessionsService {
       previousContentVersionId: session.activeContentVersionId ?? undefined,
     };
 
-    await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData);
+    await this.pgBossService.send(PgBossQueueEnum.REGENERATE_CONTENT, jobData, { expireInSeconds: 120 });
     this.logger.log(
       `Enqueued regeneration contentVersionId=${contentVersion.id} session=${sessionId} targets=${dto.targets.join(',')} userId=${userId}`,
       'SessionsService',
