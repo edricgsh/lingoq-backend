@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
-import { LoggerService } from 'src/modules/logger/logger.service';
-import { ProficiencyLevel } from 'src/enums/proficiency-level.enum';
-import { QuestionType } from 'src/enums/question-type.enum';
+import Anthropic from "@anthropic-ai/sdk";
+import { Injectable } from "@nestjs/common";
+import { traceable } from "langsmith/traceable";
+import { wrapAnthropic } from "langsmith/wrappers/anthropic";
+import { ProficiencyLevel } from "src/enums/proficiency-level.enum";
+import { QuestionType } from "src/enums/question-type.enum";
+import { AwsSecretsService } from "src/modules/aws-secrets/aws-secrets.service";
+import { LoggerService } from "src/modules/logger/logger.service";
 
 export interface LearnerContext {
   nativeLanguage: string;
@@ -54,58 +56,72 @@ export interface GradeResult {
 
 @Injectable()
 export class ClaudeService {
-  private client: Anthropic;
+  private client: ReturnType<typeof wrapAnthropic>;
 
   constructor(
     private readonly secretsService: AwsSecretsService,
     private readonly logger: LoggerService,
   ) {}
 
-  private async getClient(): Promise<Anthropic> {
+  private async getClient(): Promise<ReturnType<typeof wrapAnthropic>> {
     if (!this.client) {
       const secrets = await this.secretsService.getSecret();
-      this.client = new Anthropic({ apiKey: secrets.ANTHROPIC_API_KEY });
+      this.client = wrapAnthropic(
+        new Anthropic({ apiKey: secrets.ANTHROPIC_API_KEY }) as any,
+      );
     }
     return this.client;
   }
 
-  private async callClaude(prompt: string): Promise<string> {
-    const client = await this.getClient();
-    const response = await client.messages.create(
-      {
-        temperature: 0.7,
-        model: 'claude-haiku-4-5',
-        max_tokens: 8192,
-        messages: [{ role: 'user', content: prompt }],
-      },
-      { signal: AbortSignal.timeout(110_000) },
-    );
-    const content = response.content[0];
-    if (content.type !== 'text') throw new Error('Unexpected response type');
-    return content.text;
-  }
+  private callClaude = traceable(
+    async (prompt: string): Promise<string> => {
+      const client = await this.getClient();
+      const response = await client.messages.create(
+        {
+          temperature: 0.7,
+          model: "claude-haiku-4-5",
+          max_tokens: 8192,
+          messages: [{ role: "user", content: prompt }],
+        },
+        { signal: AbortSignal.timeout(110_000) },
+      );
+      const content = response.content[0];
+      if (content.type !== "text") throw new Error("Unexpected response type");
+      return content.text;
+    },
+    { name: "callClaude", run_type: "llm" },
+  );
 
   // Maps a CEFR level to the level one step above (used to make content slightly challenging)
   private readonly cefrStepUp: Record<string, string> = {
-    A1: 'A2', A2: 'B1', B1: 'B2', B2: 'C1', C1: 'C2', C2: 'C2',
+    A1: "A2",
+    A2: "B1",
+    B1: "B2",
+    B2: "C1",
+    C1: "C2",
+    C2: "C2",
   };
 
   // Human-readable difficulty guidance per CEFR level
   private readonly cefrGuidance: Record<string, string> = {
-    A1: 'Use only very common, everyday words (top 500 words). Keep sentences short (under 8 words). Avoid idioms and complex grammar.',
-    A2: 'Use common words and simple present/past tense. Keep sentences clear. Introduce a few useful phrases.',
-    B1: 'Use intermediate vocabulary including some idiomatic expressions. Mix simple and compound sentences. Topics can be slightly abstract.',
-    B2: 'Use a wide range of vocabulary including collocations and phrasal verbs. Use complex sentences and subordinate clauses. Topics can be nuanced.',
-    C1: 'Use sophisticated vocabulary, advanced grammar structures, and idiomatic language naturally. Expect precise and nuanced answers.',
-    C2: 'Use near-native vocabulary and grammar. Expect highly accurate, idiomatic, and nuanced responses.',
+    A1: "Use only very common, everyday words (top 500 words). Keep sentences short (under 8 words). Avoid idioms and complex grammar.",
+    A2: "Use common words and simple present/past tense. Keep sentences clear. Introduce a few useful phrases.",
+    B1: "Use intermediate vocabulary including some idiomatic expressions. Mix simple and compound sentences. Topics can be slightly abstract.",
+    B2: "Use a wide range of vocabulary including collocations and phrasal verbs. Use complex sentences and subordinate clauses. Topics can be nuanced.",
+    C1: "Use sophisticated vocabulary, advanced grammar structures, and idiomatic language naturally. Expect precise and nuanced answers.",
+    C2: "Use near-native vocabulary and grammar. Expect highly accurate, idiomatic, and nuanced responses.",
   };
 
-  async extractVocab(subtitles: string, context: LearnerContext): Promise<VocabResult[]> {
-    const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
+  async extractVocab(
+    subtitles: string,
+    context: LearnerContext,
+  ): Promise<VocabResult[]> {
+    const targetLevel =
+      this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[context.proficiencyLevel];
     const customBlock = context.customInstructions
       ? `\nCustom instructions from the learner: ${context.customInstructions}\n`
-      : '';
+      : "";
     const prompt = `You are a language learning assistant. Extract 5-10 vocabulary words from the following ${context.targetLanguage} transcript for a ${context.proficiencyLevel} level learner whose native language is ${context.nativeLanguage}.
 ${customBlock}
 Difficulty target: Select words at the ${context.proficiencyLevel}–${targetLevel} level — words the learner has likely encountered but would benefit from reinforcing, plus a few words just at the edge of their comfort zone. ${guidance}
@@ -122,16 +138,20 @@ ${subtitles.substring(0, 8000)}
 Respond with ONLY a valid JSON array of vocab objects. No markdown, no explanation.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleaned) as VocabResult[];
   }
 
-  async generateSummary(subtitles: string, context: LearnerContext): Promise<SummaryResult> {
-    const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
+  async generateSummary(
+    subtitles: string,
+    context: LearnerContext,
+  ): Promise<SummaryResult> {
+    const targetLevel =
+      this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[targetLevel];
     const customBlock = context.customInstructions
       ? `\nCustom instructions from the learner: ${context.customInstructions}\n`
-      : '';
+      : "";
     const prompt = `You are a language learning assistant. Create a reading summary for a ${context.proficiencyLevel} level learner of ${context.targetLanguage}.
 ${customBlock}
 Write the summary slightly above their current level (targeting ${targetLevel}) to provide a productive challenge. ${guidance}
@@ -146,17 +166,24 @@ Provide:
 Respond with ONLY a valid JSON object. No markdown, no explanation.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleaned) as SummaryResult;
   }
 
-  async generateHomework(subtitles: string, vocab: VocabResult[], summary: SummaryResult, context: LearnerContext, youtubeUrl: string): Promise<HomeworkResult> {
-    const vocabWords = vocab.map(v => v.word).join(', ');
-    const targetLevel = this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
+  async generateHomework(
+    subtitles: string,
+    vocab: VocabResult[],
+    summary: SummaryResult,
+    context: LearnerContext,
+    youtubeUrl: string,
+  ): Promise<HomeworkResult> {
+    const vocabWords = vocab.map((v) => v.word).join(", ");
+    const targetLevel =
+      this.cefrStepUp[context.proficiencyLevel] || context.proficiencyLevel;
     const guidance = this.cefrGuidance[targetLevel];
     const customBlock = context.customInstructions
       ? `\nCustom instructions from the learner: ${context.customInstructions}\n`
-      : '';
+      : "";
     const prompt = `You are a language learning teacher. Create 5 homework questions for a ${context.proficiencyLevel} level learner of ${context.targetLanguage} (native language: ${context.nativeLanguage}).
 ${customBlock}
 Difficulty target: Questions should be at ${targetLevel} level — slightly above the learner's current ${context.proficiencyLevel} level to provide a productive challenge without being overwhelming. ${guidance}
@@ -168,7 +195,7 @@ IMPORTANT: Base the questions primarily on the Summary Article below. The learne
 Summary Article (${context.targetLanguage}):
 ${summary.summaryTargetLang}
 
-Key phrases covered: ${summary.keyPhrases.map(k => k.phrase).join(', ')}
+Key phrases covered: ${summary.keyPhrases.map((k) => k.phrase).join(", ")}
 
 Transcript (for additional context only):
 ${subtitles.substring(0, 4000)}
@@ -186,30 +213,38 @@ Each question object: { questionType, questionText, expectedAnswer, orderIndex (
 Respond with ONLY a valid JSON object: { "questions": [...] }. No markdown, no explanation.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleaned) as HomeworkResult;
   }
 
-  async generateSearchQueries(topic: string, targetLanguage: string): Promise<string[]> {
+  async generateSearchQueries(
+    topic: string,
+    targetLanguage: string,
+  ): Promise<string[]> {
     const prompt = `Generate 3 YouTube search queries for the topic "${topic}" that a native ${targetLanguage} speaker would use. Return ONLY a JSON array of exactly 3 strings, no markdown.`;
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleaned) as string[];
   }
 
   async gradeHomework(
-    questions: Array<{ id: string; questionType: string; questionText: string; expectedAnswer: string }>,
+    questions: Array<{
+      id: string;
+      questionType: string;
+      questionText: string;
+      expectedAnswer: string;
+    }>,
     answers: Array<{ questionId: string; answerText: string }>,
     context: LearnerContext,
   ): Promise<GradeResult> {
-    const questionsWithAnswers = questions.map(q => {
-      const answer = answers.find(a => a.questionId === q.id);
+    const questionsWithAnswers = questions.map((q) => {
+      const answer = answers.find((a) => a.questionId === q.id);
       return {
         questionId: q.id,
         questionType: q.questionType,
         questionText: q.questionText,
         expectedAnswer: q.expectedAnswer,
-        studentAnswer: answer?.answerText || '',
+        studentAnswer: answer?.answerText || "",
       };
     });
 
@@ -242,7 +277,7 @@ Also provide:
 Respond with ONLY a valid JSON object: { "overallScore", "overallFeedback", "answers": [...] }. No markdown.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleaned) as GradeResult;
   }
 }

@@ -14,6 +14,7 @@ import { PgBossModule } from 'src/modules/pg-boss/pg-boss.module';
 import { SupabaseModule } from 'src/modules/supabase/supabase.module';
 import { LambdaModule } from 'src/modules/lambda/lambda.module';
 import { ClaudeModule } from 'src/modules/claude/claude.module';
+import { LangSmithModule } from 'src/modules/langsmith/langsmith.module';
 import { SessionsModule } from 'src/modules/sessions/sessions.module';
 import { VocabModule } from 'src/modules/vocab/vocab.module';
 import { HomeworkModule } from 'src/modules/homework/homework.module';
@@ -40,6 +41,7 @@ import { NotesModule } from 'src/modules/notes/notes.module';
     PgBossModule,
     SupabaseModule,
     LambdaModule,
+    LangSmithModule,
     ClaudeModule,
     SessionsModule,
     VocabModule,

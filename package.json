@@ -22,7 +22,7 @@
     "migration:revert": "npm run build && DB_MIGRATION=true ./node_modules/.bin/typeorm -d ./dist/database/data-source.js migration:revert"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
+    "@anthropic-ai/sdk": "^0.82.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.670.0",
     "@aws-sdk/client-lambda": "^3.687.0",
     "@aws-sdk/client-secrets-manager": "^3.687.0",
@@ -45,6 +45,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
+    "langsmith": "^0.5.16",
     "nest-winston": "^1.10.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
