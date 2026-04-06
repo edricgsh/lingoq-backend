@@ -73,6 +73,28 @@ export class ClaudeService {
     return this.client;
   }
 
+  private parseJson<T>(raw: string): T {
+    // Strip markdown code fences
+    const cleaned = raw.replace(/```json\n?|\n?```/g, "").trim();
+    // Find the outermost JSON object or array
+    const start = cleaned.search(/[\[{]/);
+    const lastBrace = cleaned.lastIndexOf("}");
+    const lastBracket = cleaned.lastIndexOf("]");
+    const end = Math.max(lastBrace, lastBracket);
+    if (start === -1 || end === -1) throw new SyntaxError("No JSON found in response");
+    const extracted = cleaned.slice(start, end + 1);
+    try {
+      return JSON.parse(extracted) as T;
+    } catch {
+      // Last resort: attempt to fix unescaped control characters inside string values
+      const sanitized = extracted.replace(/[\u0000-\u001F\u007F]/g, (c) => {
+        const escapes: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+        return escapes[c] ?? "";
+      });
+      return JSON.parse(sanitized) as T;
+    }
+  }
+
   private callClaude = traceable(
     async (prompt: string): Promise<string> => {
       const client = await this.getClient();
@@ -138,8 +160,7 @@ ${subtitles.substring(0, 8000)}
 Respond with ONLY a valid JSON array of vocab objects. No markdown, no explanation.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleaned) as VocabResult[];
+    return this.parseJson<VocabResult[]>(response);
   }
 
   async generateSummary(
@@ -166,8 +187,7 @@ Provide:
 Respond with ONLY a valid JSON object. No markdown, no explanation.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleaned) as SummaryResult;
+    return this.parseJson<SummaryResult>(response);
   }
 
   async generateHomework(
@@ -213,8 +233,7 @@ Each question object: { questionType, questionText, expectedAnswer, orderIndex (
 Respond with ONLY a valid JSON object: { "questions": [...] }. No markdown, no explanation.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleaned) as HomeworkResult;
+    return this.parseJson<HomeworkResult>(response);
   }
 
   async generateSearchQueries(
@@ -223,8 +242,7 @@ Respond with ONLY a valid JSON object: { "questions": [...] }. No markdown, no e
   ): Promise<string[]> {
     const prompt = `Generate 3 YouTube search queries for the topic "${topic}" that a native ${targetLanguage} speaker would use. Return ONLY a JSON array of exactly 3 strings, no markdown.`;
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleaned) as string[];
+    return this.parseJson<string[]>(response);
   }
 
   async gradeHomework(
@@ -277,7 +295,6 @@ Also provide:
 Respond with ONLY a valid JSON object: { "overallScore", "overallFeedback", "answers": [...] }. No markdown.`;
 
     const response = await this.callClaude(prompt);
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
-    return JSON.parse(cleaned) as GradeResult;
+    return this.parseJson<GradeResult>(response);
   }
 }

@@ -1,19 +1,35 @@
 import { Controller, Post, Body, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
+import { LoggerService } from 'src/modules/logger/logger.service';
 import { Readable } from 'stream';
 
 const TTS_CHUNK_SIZE = 3;
 const TTS_CHUNK_DELAY_MS = 300;
 
-async function fetchTtsAudio(text: string, lang: string): Promise<Buffer | null> {
+async function fetchTtsAudio(
+  text: string,
+  lang: string,
+  logger: LoggerService,
+): Promise<Buffer | null> {
   const url =
     `https://translate.google.com/translate_tts` +
     `?ie=UTF-8&tl=${encodeURIComponent(lang)}&client=tw-ob&q=${encodeURIComponent(text)}`;
 
+  logger.log(`[TTS] fetching audio — lang=${lang} text="${text.slice(0, 60)}"`);
+
   const upstream = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!upstream.ok) return null;
-  return Buffer.from(await upstream.arrayBuffer());
+
+  if (!upstream.ok) {
+    logger.warn(
+      `[TTS] upstream failed — lang=${lang} status=${upstream.status} text="${text.slice(0, 60)}"`,
+    );
+    return null;
+  }
+
+  const buf = Buffer.from(await upstream.arrayBuffer());
+  logger.log(`[TTS] audio fetched — lang=${lang} bytes=${buf.byteLength} text="${text.slice(0, 60)}"`);
+  return buf;
 }
 
 function sleep(ms: number) {
@@ -23,13 +39,16 @@ function sleep(ms: number) {
 @Controller('tts')
 @UseGuards(JwtAuthGuard)
 export class TtsController {
+  constructor(private readonly logger: LoggerService) {}
+
   @Post('speak')
   async speak(
     @Body() body: { text: string; lang?: string },
     @Res() res: Response,
   ) {
     const lang = body.lang ?? 'es';
-    const buf = await fetchTtsAudio(body.text, lang);
+    this.logger.log(`[TTS] /speak — lang=${lang} text="${(body.text ?? '').slice(0, 60)}"`);
+    const buf = await fetchTtsAudio(body.text, lang, this.logger);
     if (!buf) {
       res.status(502).json({ message: 'TTS upstream failed' });
       return;
@@ -51,14 +70,22 @@ export class TtsController {
   ): Promise<Record<string, string>> {
     const lang = body.lang ?? 'es';
     const words = (body.words ?? []).slice(0, 50);
+    this.logger.log(`[TTS] /speak-batch — lang=${lang} count=${words.length}`);
     const result: Record<string, string> = {};
+    let successCount = 0;
+    let failCount = 0;
 
     for (let i = 0; i < words.length; i += TTS_CHUNK_SIZE) {
       const chunk = words.slice(i, i + TTS_CHUNK_SIZE);
       await Promise.allSettled(
         chunk.map(async (word) => {
-          const buf = await fetchTtsAudio(word, lang);
-          if (buf) result[word] = buf.toString('base64');
+          const buf = await fetchTtsAudio(word, lang, this.logger);
+          if (buf) {
+            result[word] = buf.toString('base64');
+            successCount++;
+          } else {
+            failCount++;
+          }
         }),
       );
       if (i + TTS_CHUNK_SIZE < words.length) {
@@ -66,6 +93,9 @@ export class TtsController {
       }
     }
 
+    this.logger.log(
+      `[TTS] /speak-batch done — lang=${lang} success=${successCount} fail=${failCount}`,
+    );
     return result;
   }
 }
