@@ -22,6 +22,7 @@ export class SecretData {
   LINGOQ_BE_API_KEY?: string;
   RESEND_API_KEY?: string;
   LANGSMITH_API_KEY?: string;
+  LINGOQ_INTERNAL_SECRET_KEY?: string;
 }
 
 @Injectable()

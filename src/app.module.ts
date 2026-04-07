@@ -25,6 +25,7 @@ import { FlashcardsModule } from 'src/modules/flashcards/flashcards.module';
 import { AdminModule } from 'src/modules/admin/admin.module';
 import { ExploreModule } from 'src/modules/explore/explore.module';
 import { NotesModule } from 'src/modules/notes/notes.module';
+import { SupadataApiKeyModule } from 'src/modules/supadata-api-key/supadata-api-key.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { NotesModule } from 'src/modules/notes/notes.module';
     AdminModule,
     ExploreModule,
     NotesModule,
+    SupadataApiKeyModule,
   ],
   providers: [
     {

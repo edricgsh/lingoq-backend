@@ -20,6 +20,7 @@ import { ContentVersion } from 'src/entities/content-version.entity';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
 import { SessionNote } from 'src/entities/session-note.entity';
+import { SupadataApiKey } from 'src/entities/supadata-api-key.entity';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { SessionNote } from 'src/entities/session-note.entity';
             ExploreTopicQuery,
             ExploreRecommendation,
             SessionNote,
+            SupadataApiKey,
           ],
           synchronize: false,
           logging: false,

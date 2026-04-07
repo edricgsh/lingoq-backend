@@ -6,6 +6,8 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { LoggerService } from 'src/modules/logger/logger.service';
 import { RequestLoggerInterceptor } from 'src/shared/interceptors/request-logging.interceptor';
+import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
+import { EncryptionUtil } from 'src/shared/utils/encryption.util';
 
 const logger = new Logger('Bootstrap');
 
@@ -29,6 +31,10 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     exposedHeaders: ['set-cookie'],
   });
+
+  const secretsService = app.get(AwsSecretsService);
+  await EncryptionUtil.initialize(secretsService);
+  logger.log('EncryptionUtil initialized');
 
   const loggerService = app.get(LoggerService);
   app.useGlobalInterceptors(new RequestLoggerInterceptor(loggerService));
