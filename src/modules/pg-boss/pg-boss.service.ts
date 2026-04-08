@@ -1,6 +1,9 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PgBoss } from 'pg-boss';
 import type { SendOptions, WorkOptions, Job } from 'pg-boss';
+import { ConfigService } from '@nestjs/config';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { LoggerService } from 'src/modules/logger/logger.service';
 import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
@@ -13,6 +16,7 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly secretsService: AwsSecretsService,
     private readonly logger: LoggerService,
+    private readonly configService: ConfigService,
   ) {}
 
   async onModuleInit() {
@@ -20,8 +24,14 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
 
     const connectionString = `postgresql://${secrets.DB_USERNAME}:${secrets.DB_PASSWORD}@${secrets.DB_HOST}:${secrets.DB_PORT}/${secrets.DB_NAME}`;
 
+    const sslCertRelPath = this.configService.get<string>('DB_SSL_CERT');
+    const ssl = sslCertRelPath
+      ? { rejectUnauthorized: true, ca: fs.readFileSync(path.resolve(process.cwd(), sslCertRelPath)).toString() }
+      : undefined;
+
     this.boss = new PgBoss({
       connectionString,
+      ssl,
       schema: this.SCHEMA,
       monitorIntervalSeconds: 60,
       supervise: true,
