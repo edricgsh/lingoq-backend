@@ -12,7 +12,6 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import jwt from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Request, Response } from 'express';
@@ -190,7 +189,7 @@ export class AuthController {
     params.append('redirect_uri', callbackUrl);
     params.append('code_verifier', codeVerifier);
 
-    let tokenData: { access_token: string; refresh_token: string; id_token: string; expires_in: number };
+    let tokenData: { access_token: string; refresh_token: string; expires_in: number };
     try {
       const response = await axios.post(`${cognitoAuthUrl}/oauth2/token`, params, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -200,36 +199,44 @@ export class AuthController {
       throw new BadRequestException(err?.response?.data?.error_description || 'Token exchange failed');
     }
 
-    // Decode id_token for email checks (allowlist + provider conflict)
-    const idPayload = jwt.decode(tokenData.id_token) as Record<string, any> | null;
+    // Fetch user info from Cognito userInfo endpoint — this always includes email
+    // regardless of provider (unlike decoding the access token which lacks email for Google users)
+    const userInfo: { sub: string; email: string; username: string; name?: string } = await axios
+      .get(`${cognitoAuthUrl}/oauth2/userInfo`, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      })
+      .then((r) => r.data)
+      .catch(() => null);
+
+    if (!userInfo?.email) {
+      await this.authService.logout(tokenData.access_token).catch(() => null);
+      throw new BadRequestException('Unable to retrieve user email from provider');
+    }
 
     // Check allowlist for social logins when beta mode is enabled
-    if (idPayload?.email) {
-      try {
-        await this.authService.assertAllowlisted(idPayload.email);
-      } catch (err) {
-        await this.authService.logout(tokenData.access_token).catch(() => null);
-        throw err;
-      }
+    try {
+      await this.authService.assertAllowlisted(userInfo.email);
+    } catch (err) {
+      await this.authService.logout(tokenData.access_token).catch(() => null);
+      throw err;
     }
 
     // Check for provider conflict: if this Google account's email is already registered via email/password
-    try {
-      if (idPayload?.email && idPayload?.['cognito:username']) {
-        const conflictProvider = await this.authService.checkSocialProviderConflict(
-          idPayload.email,
-          idPayload['cognito:username'],
-        );
-        if (conflictProvider === 'email') {
-          // Sign out from Cognito so the next Google login attempt prompts account selection
-          await this.authService.logout(tokenData.access_token).catch(() => null);
-          throw new ConflictException('USER_EXISTS_WITH_EMAIL');
-        }
-      }
-    } catch (err) {
-      if (err instanceof ConflictException) throw err;
-      // Decode/check errors are non-fatal — proceed with sign-in
+    const conflictProvider = await this.authService.checkSocialProviderConflict(
+      userInfo.email,
+      userInfo.username,
+    ).catch(() => null);
+    if (conflictProvider === 'email') {
+      await this.authService.logout(tokenData.access_token).catch(() => null);
+      throw new ConflictException('USER_EXISTS_WITH_EMAIL');
     }
+
+    // Sync user to DB on social login
+    await this.authService.syncUser({
+      cognitoId: userInfo.sub,
+      email: userInfo.email,
+      name: userInfo.name,
+    });
 
     const cookieOptions = getCookieOptions(this.isLocal);
     res.cookie('accessToken', tokenData.access_token, {
