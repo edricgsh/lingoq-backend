@@ -84,9 +84,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
     let user = await this.userService.findByCognitoId(payload.sub);
     if (!user) {
+      // Native (email/password) users are synced via post-confirmation Lambda.
+      // Social (Google) users are synced during /auth/social/exchange.
+      // If neither happened, fall back to email from access token (native only).
+      const email = payload.email;
+      if (!email) {
+        throw new UnauthorizedException('User not found');
+      }
       user = await this.authService.syncUser({
         cognitoId: payload.sub,
-        email: payload.email || payload['cognito:username'] || payload.sub,
+        email,
         name: payload.name,
       });
     }
@@ -96,7 +103,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     } catch {}
     return {
       userId: user.id,
-      username: payload.email || payload['cognito:username'] || payload.sub,
+      username: user.email,
       role: user.role,
     };
   }
