@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as dotenv from 'dotenv';
@@ -9,8 +11,18 @@ import { withRetry } from './connection-retry.util';
 const DB_SCHEMA = 'lingoq';
 const logger = new Logger('MigrationRunner');
 
+function getSslConfig(): { rejectUnauthorized: boolean; ca: string } | undefined {
+  const sslCertRelPath = process.env.DB_SSL_CERT;
+  if (!sslCertRelPath) return undefined;
+  return {
+    rejectUnauthorized: true,
+    ca: fs.readFileSync(path.resolve(process.cwd(), sslCertRelPath)).toString(),
+  };
+}
+
 async function getDatabaseConfig(secretsService: AwsSecretsService) {
   const secrets = await secretsService.getSecret();
+  const ssl = getSslConfig();
   return {
     type: 'postgres' as const,
     host: secrets.DB_HOST || 'localhost',
@@ -19,6 +31,7 @@ async function getDatabaseConfig(secretsService: AwsSecretsService) {
     password: secrets.DB_PASSWORD || 'postgres',
     database: secrets.DB_NAME || 'postgres',
     schema: DB_SCHEMA,
+    ...(ssl && { ssl }),
     extra: {
       options: `-c search_path=${DB_SCHEMA}`,
     },
@@ -72,6 +85,7 @@ async function runMigrations() {
       username: databaseConfig.username,
       password: databaseConfig.password,
       database: databaseConfig.database,
+      ...(databaseConfig.ssl && { ssl: databaseConfig.ssl }),
     });
     await bootstrapDs.initialize();
     await bootstrapDs.query(`CREATE SCHEMA IF NOT EXISTS "${DB_SCHEMA}"`);
