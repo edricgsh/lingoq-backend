@@ -1,6 +1,8 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Logger, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AwsSecretsService } from 'src/modules/aws-secrets/aws-secrets.service';
 import { User } from 'src/entities/user.entity';
 import { UserOnboarding } from 'src/entities/user-onboarding.entity';
@@ -26,15 +28,21 @@ import { SupadataApiKey } from 'src/entities/supadata-api-key.entity';
   imports: [
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      inject: [AwsSecretsService],
-      useFactory: async (secretsService: AwsSecretsService) => {
+      inject: [AwsSecretsService, ConfigService],
+      useFactory: async (secretsService: AwsSecretsService, configService: ConfigService) => {
         const secrets = await secretsService.getSecret();
         const logger = new Logger('DatabaseModule');
         const host = secrets.DB_HOST || 'localhost';
         const port = parseInt(secrets.DB_PORT || '5433');
         const database = secrets.DB_NAME || 'learn_spanish';
         const username = secrets.DB_USERNAME || 'postgres';
-        logger.log(`Connecting to postgres://${username}@${host}:${port}/${database} (schema: lingoq)`);
+        // Relative path to CA cert bundled in the image: certs/supabase/{env}/ca.crt
+        // Not set for local Docker dev (no SSL needed)
+        const sslCertRelPath = configService.get<string>('DB_SSL_CERT');
+        const sslCa = sslCertRelPath
+          ? fs.readFileSync(path.resolve(process.cwd(), sslCertRelPath)).toString()
+          : null;
+        logger.log(`Connecting to postgres://${username}@${host}:${port}/${database} (schema: lingoq, ssl: ${!!sslCa})`);
         return {
           type: 'postgres',
           host,
@@ -43,6 +51,12 @@ import { SupadataApiKey } from 'src/entities/supadata-api-key.entity';
           password: secrets.DB_PASSWORD || 'postgres',
           database,
           schema: 'lingoq',
+          ...(sslCa && {
+            ssl: {
+              rejectUnauthorized: true,
+              ca: sslCa,
+            },
+          }),
           extra: {
             options: `-c search_path=lingoq`,
           },

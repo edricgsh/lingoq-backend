@@ -13,5 +13,6 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/.env.* ./
+COPY --from=builder /app/certs ./certs
 EXPOSE 5007
 CMD ["node", "dist/main"]
