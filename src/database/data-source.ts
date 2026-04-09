@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { resolve } from 'path';
 import { DataSource } from 'typeorm';
 
 const DB_SCHEMA = 'lingoq';
@@ -24,6 +25,11 @@ async function initializeAppDataSource() {
     const secretsService = new AwsSecretsService(configService);
     const secrets = await secretsService.getSecret();
 
+    const sslCertRelPath = process.env.DB_SSL_CERT;
+    const ssl = sslCertRelPath
+      ? { rejectUnauthorized: true, ca: readFileSync(resolve(process.cwd(), sslCertRelPath)).toString() }
+      : undefined;
+
     return new DataSource({
       type: 'postgres',
       host: secrets.DB_HOST || 'localhost',
@@ -32,6 +38,7 @@ async function initializeAppDataSource() {
       password: secrets.DB_PASSWORD || 'postgres',
       database: secrets.DB_NAME || 'postgres',
       schema: DB_SCHEMA,
+      ...(ssl && { ssl }),
       extra: {
         options: `-c search_path=${DB_SCHEMA}`,
       },
