@@ -101,7 +101,7 @@ export class AdminContentController {
     if (!video) throw new NotFoundException('Video not found');
 
     if (video.jobStatus !== JobStatus.FAILED) {
-      throw new BadRequestException(`Cannot retrigger video with status "${video.jobStatus}". Only FAILED videos can be retriggered.`);
+      throw new BadRequestException(`Cannot retrigger video with status "${video.jobStatus}". Only failed videos can be retriggered.`);
     }
 
     // Find a session with onboarding data to use as the job context
