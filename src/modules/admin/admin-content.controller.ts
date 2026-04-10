@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, NotFoundException, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from 'src/shared/guards/jwt-auth.guard';
@@ -7,7 +7,11 @@ import { Roles } from 'src/decorators/roles.decorator';
 import { UserRole } from 'src/enums/user-role.enum';
 import { VideoContent } from 'src/entities/video-content.entity';
 import { LearningSession } from 'src/entities/learning-session.entity';
+import { UserOnboarding } from 'src/entities/user-onboarding.entity';
 import { JobStatus } from 'src/enums/job-status.enum';
+import { PgBossService } from 'src/modules/pg-boss/pg-boss.service';
+import { PgBossQueueEnum } from 'src/enums/pg-boss-queue.enum';
+import { LoggerService } from 'src/modules/logger/logger.service';
 
 @Controller('admin/content')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -18,6 +22,10 @@ export class AdminContentController {
     private readonly videoContentRepo: Repository<VideoContent>,
     @InjectRepository(LearningSession)
     private readonly sessionRepo: Repository<LearningSession>,
+    @InjectRepository(UserOnboarding)
+    private readonly onboardingRepo: Repository<UserOnboarding>,
+    private readonly pgBossService: PgBossService,
+    private readonly logger: LoggerService,
   ) {}
 
   @Get('videos')
@@ -85,6 +93,50 @@ export class AdminContentController {
       nextCursor: hasMore ? videos[videos.length - 1].id : null,
       hasMore,
     };
+  }
+
+  @Post('videos/:videoId/retrigger')
+  async retriggerVideo(@Param('videoId') videoId: string) {
+    const video = await this.videoContentRepo.findOne({ where: { id: videoId } });
+    if (!video) throw new NotFoundException('Video not found');
+
+    if (video.jobStatus !== JobStatus.FAILED) {
+      throw new BadRequestException(`Cannot retrigger video with status "${video.jobStatus}". Only FAILED videos can be retriggered.`);
+    }
+
+    // Find a session with onboarding data to use as the job context
+    const session = await this.sessionRepo
+      .createQueryBuilder('s')
+      .where('s.videoContentId = :videoId', { videoId })
+      .orderBy('s.createdAt', 'ASC')
+      .getOne();
+
+    if (!session) throw new BadRequestException('No sessions found for this video — cannot determine job context');
+
+    const onboarding = await this.onboardingRepo.findOne({ where: { userId: session.userId } });
+    if (!onboarding) throw new BadRequestException('Session owner has no onboarding data — cannot determine job context');
+
+    await this.videoContentRepo.update(videoId, { jobStatus: JobStatus.PENDING, errorMessage: null });
+
+    const jobId = await this.pgBossService.send(PgBossQueueEnum.PROCESS_YOUTUBE_URL, {
+      videoContentId: video.id,
+      userId: session.userId,
+      sessionId: session.id,
+      youtubeUrl: video.youtubeUrl,
+      youtubeVideoId: video.youtubeVideoId,
+      nativeLanguage: onboarding.nativeLanguage,
+      targetLanguage: onboarding.targetLanguage,
+      proficiencyLevel: onboarding.proficiencyLevel,
+    });
+
+    await this.videoContentRepo.update(videoId, { pgBossJobId: jobId });
+
+    this.logger.log(
+      `Admin retriggered videoId=${videoId} jobId=${jobId} using userId=${session.userId}`,
+      'AdminContentController',
+    );
+
+    return { jobId, videoId };
   }
 
   @Get('videos/:videoId')
