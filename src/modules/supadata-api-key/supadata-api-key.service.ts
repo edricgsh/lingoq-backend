@@ -262,7 +262,7 @@ export class SupadataApiKeyService {
     return d;
   }
 
-  private async reactivateEligibleKeys(): Promise<void> {
+  async reactivateEligibleKeys(): Promise<void> {
     const now = new Date();
     await this.repo
       .createQueryBuilder()
