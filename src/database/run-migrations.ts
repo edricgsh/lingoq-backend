@@ -36,7 +36,7 @@ async function getDatabaseConfig(secretsService: AwsSecretsService) {
       options: `-c search_path=${DB_SCHEMA}`,
     },
     entities: [__dirname + '/../entities/*.entity{.ts,.js}'],
-    migrations: [process.cwd() + '/dist/database/migrations/*.js'],
+    migrations: [__dirname + '/migrations/*.js'],
     synchronize: false,
     logging: false,
   };
