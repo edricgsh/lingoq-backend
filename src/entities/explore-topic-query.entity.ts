@@ -11,4 +11,8 @@ export class ExploreTopicQuery extends BaseEntity {
   @Column({ type: 'jsonb', default: [] }) queries: string[];
 
   @Column({ name: 'expires_at', type: 'timestamptz' }) expiresAt: Date;
+
+  // Map of query string → ISO timestamp of last Supadata fetch
+  @Column({ name: 'query_fetched_at', type: 'jsonb', default: {} })
+  queryFetchedAt: Record<string, string>;
 }

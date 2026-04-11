@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThan, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ExploreTopicQuery } from 'src/entities/explore-topic-query.entity';
 import { ExploreRecommendation } from 'src/entities/explore-recommendation.entity';
 import { SubtitleCache } from 'src/entities/subtitle-cache.entity';
@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { isTargetLanguageMatch } from './language-filter.helper';
 
 const QUERY_CACHE_TTL_DAYS = 7;
-const RESULTS_CACHE_TTL_DAYS = 7;
+const RESULTS_CACHE_TTL_DAYS = 5 * 365; // 5 years — serve from DB, avoid Supadata calls
 
 @Injectable()
 export class ExploreService {
@@ -33,9 +33,17 @@ export class ExploreService {
 
     for (const topic of topics) {
       try {
-        const queries = await this.getOrGenerateQueries(topic, targetLanguage);
+        const { queries, topicQueryRecord } = await this.getOrGenerateQueries(topic, targetLanguage);
         for (const query of queries) {
-          await this.fetchAndUpsertResults(topic, targetLanguage, query, apiKey);
+          const alreadyFetched = this.isQueryFreshInDb(topicQueryRecord, query);
+          if (alreadyFetched) {
+            this.logger.log(
+              `Skipping Supadata call for query "${query}" (topic: "${topic}") — results already cached`,
+              'ExploreService',
+            );
+            continue;
+          }
+          await this.fetchAndUpsertResults(topic, targetLanguage, query, apiKey, topicQueryRecord);
         }
       } catch (err) {
         this.logger.error(
@@ -47,22 +55,47 @@ export class ExploreService {
     }
   }
 
-  private async getOrGenerateQueries(topic: string, targetLanguage: string): Promise<string[]> {
-    const existing = await this.topicQueryRepo.findOne({
-      where: { topic, targetLanguage, expiresAt: MoreThan(new Date()) },
-    });
-    if (existing) return existing.queries;
+  private isQueryFreshInDb(record: ExploreTopicQuery, query: string): boolean {
+    const fetchedAt = record.queryFetchedAt?.[query];
+    if (!fetchedAt) return false;
+    const ttlMs = RESULTS_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(fetchedAt).getTime() < ttlMs;
+  }
+
+  private async getOrGenerateQueries(
+    topic: string,
+    targetLanguage: string,
+  ): Promise<{ queries: string[]; topicQueryRecord: ExploreTopicQuery }> {
+    // Always look up without expiresAt filter — an expired record still has valid
+    // queryFetchedAt stamps that protect Supadata credits. Only the search queries
+    // themselves need refreshing if the record is expired.
+    const existing = await this.topicQueryRepo.findOne({ where: { topic, targetLanguage } });
+
+    if (existing) {
+      // If expired, just renew the TTL — keep the existing queries and their queryFetchedAt
+      // stamps intact. This avoids calling Supadata for data that's already cached in the DB.
+      // We only regenerate queries when the record doesn't exist at all.
+      if (existing.expiresAt <= new Date()) {
+        this.logger.log(
+          `Query cache expired for topic "${topic}" (${targetLanguage}) — renewing TTL, keeping existing queries`,
+          'ExploreService',
+        );
+        existing.expiresAt = new Date(Date.now() + QUERY_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
+        const updated = await this.topicQueryRepo.save(existing);
+        return { queries: updated.queries, topicQueryRecord: updated };
+      }
+      return { queries: existing.queries, topicQueryRecord: existing };
+    }
 
     this.logger.log(`Generating search queries for topic "${topic}" (${targetLanguage})`, 'ExploreService');
     const queries = await this.claudeService.generateSearchQueries(topic, targetLanguage);
 
     const expiresAt = new Date(Date.now() + QUERY_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
-    await this.topicQueryRepo.upsert(
-      { id: uuidv4(), topic, targetLanguage, queries, expiresAt },
-      { conflictPaths: ['topic', 'targetLanguage'] },
+    const record = await this.topicQueryRepo.save(
+      this.topicQueryRepo.create({ id: uuidv4(), topic, targetLanguage, queries, expiresAt, queryFetchedAt: {} }),
     );
 
-    return queries;
+    return { queries, topicQueryRecord: record };
   }
 
   private async fetchAndUpsertResults(
@@ -70,6 +103,7 @@ export class ExploreService {
     targetLanguage: string,
     query: string,
     apiKey: string,
+    topicQueryRecord: ExploreTopicQuery,
   ): Promise<void> {
     const url = `https://api.supadata.ai/v1/youtube/search?query=${encodeURIComponent(query)}&type=video&limit=20&sortBy=relevance&uploadDate=year`;
     const res = await fetch(url, { headers: { 'x-api-key': apiKey } });
@@ -117,6 +151,14 @@ export class ExploreService {
         }),
       );
     }
+
+    // Stamp the fetch time so future runs skip this query
+    topicQueryRecord.queryFetchedAt = {
+      ...topicQueryRecord.queryFetchedAt,
+      [query]: new Date().toISOString(),
+    };
+    await this.topicQueryRepo.save(topicQueryRecord);
+    this.logger.log(`Stamped queryFetchedAt for query "${query}" (topic: "${topic}")`, 'ExploreService');
   }
 
   async getSubtitlesByVideoId(videoId: string): Promise<string | null> {
