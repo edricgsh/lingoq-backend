@@ -21,6 +21,9 @@ async function bootstrap() {
     'http://localhost:5005',
     /lingoq\.study/,
     /lingoq.*vercel/,
+    /youtube\.com$/,
+    /youtu\.be$/,
+    /youtube-nocookie\.com$/,
     ...corsOrigin.split(',').map((o) => o.trim()).filter(Boolean),
   ];
 
