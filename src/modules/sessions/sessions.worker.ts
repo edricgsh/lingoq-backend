@@ -112,7 +112,7 @@ export class SessionsWorker implements OnModuleInit {
 
       const context: LearnerContext = { nativeLanguage, targetLanguage, proficiencyLevel, customInstructions };
 
-      // Step 1: Extract subtitles — check cache first
+      // Step 1: Extract subtitles — check cache first, then Lambda
       this.logger.log(`Processing videoContent ${videoContentId}: Checking subtitle cache...`);
       const targetLangCode = LANGUAGE_NAME_TO_CODES[targetLanguage.toLowerCase()]?.[0];
       let lambdaResult: Awaited<ReturnType<SubtitleExtractorService['extractSubtitles']>>;
